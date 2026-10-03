@@ -9,6 +9,8 @@ var breaches: MultiMeshInstance3D
 var air_streams: MultiMeshInstance3D
 var fire_points: Array[Vector3] = []
 var breach_points: Array[Vector3] = []
+var breach_air_points: Array[Vector3] = []
+var breach_air_strengths: Array[float] = []
 var animation_time := 0.0
 var native_signature := ""
 
@@ -23,17 +25,18 @@ func build() -> void:
 	flame_inner = _batch("FireInner", [
 		Voxels.block(Vector3(0, 0.019, 0), Vector3(0.038, 0.037, 0.039), Color("ffde80")),
 		Voxels.block(Vector3(-0.004, 0.045, 0), Vector3(0.019, 0.028, 0.022), Color("fff1b3"))], true)
-	var breach_blocks := [Voxels.block(Vector3(0, 0.0, 0), Vector3(0.085, 0.003, 0.085), Color("090f17"))]
-	for i in range(8):
-		var angle := i * TAU / 8.0
-		var radius := 0.046 if i % 2 == 0 else 0.049
-		breach_blocks.append(Voxels.block(Vector3(cos(angle) * radius, 0.003, sin(angle) * radius),
-			Vector3(0.025, 0.011, 0.021), Color("9a8b77") if i % 2 == 0 else Color("566772")))
+	# Vanilla's breach is a small black cross at the damaged tile. A shallow
+	# steel lip gives it depth without replacing its familiar silhouette.
+	var breach_blocks := [
+		Voxels.block(Vector3(0, 0, 0), Vector3(0.121, 0.002, 0.045), Color("71818a")),
+		Voxels.block(Vector3(0, 0, 0), Vector3(0.045, 0.002, 0.121), Color("71818a")),
+		Voxels.block(Vector3(0, 0.002, 0), Vector3(0.111, 0.003, 0.035), Color("020407")),
+		Voxels.block(Vector3(0, 0.002, 0), Vector3(0.035, 0.003, 0.111), Color("020407"))]
 	breaches = _batch("HullBreaches", breach_blocks, false)
 	air_streams = _batch("BreachAir", [
-		Voxels.block(Vector3(-0.018, 0.029, 0), Vector3(0.004, 0.040, 0.004), Color("6c9caa")),
-		Voxels.block(Vector3(0.008, 0.044, -0.010), Vector3(0.004, 0.035, 0.004), Color("9ac4cc")),
-		Voxels.block(Vector3(0.016, 0.063, 0.014), Vector3(0.004, 0.029, 0.004), Color("6c9caa"))], true)
+		Voxels.block(Vector3(-0.018, 0.044, 0), Vector3(0.004, 0.063, 0.004), Color("a7d0d9")),
+		Voxels.block(Vector3(0.008, 0.061, -0.010), Vector3(0.003, 0.050, 0.003), Color("e0edf0")),
+		Voxels.block(Vector3(0.016, 0.080, 0.014), Vector3(0.003, 0.040, 0.003), Color("a7d0d9"))], true)
 
 
 func _batch(node_name: String, blocks: Array, emissive: bool) -> MultiMeshInstance3D:
@@ -44,12 +47,15 @@ func _batch(node_name: String, blocks: Array, emissive: bool) -> MultiMeshInstan
 		material.emission_enabled = emissive
 		material.emission = Color("ffab60") if node_name.begins_with("Fire") else Color("527a8b")
 		material.emission_energy_multiplier = 0.22
+		if node_name == "BreachAir":
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		shared_visuals[node_name] = {"mesh": source.mesh, "material": material}
 		source.free()
 	var batch := MultiMeshInstance3D.new()
 	batch.name = node_name
 	batch.multimesh = MultiMesh.new()
 	batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	batch.multimesh.use_colors = node_name == "BreachAir"
 	batch.multimesh.mesh = shared_visuals[node_name].mesh
 	batch.material_override = shared_visuals[node_name].material
 	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -60,6 +66,8 @@ func _batch(node_name: String, blocks: Array, emissive: bool) -> MultiMeshInstan
 func set_live(ship: Node3D, data: Dictionary) -> void:
 	var fires: Array[Vector3] = []
 	var holes: Array[Vector3] = []
+	var air: Array[Vector3] = []
+	var air_strength: Array[float] = []
 	for room in data.get("rooms", []):
 		if bool(ship.enemy) and (not bool(ship.inspect_rooms) or not bool(room.get("visible", false))):
 			continue
@@ -68,24 +76,31 @@ func set_live(ship: Node3D, data: Dictionary) -> void:
 				fires.append(ship.pixel_point(point, 0.082))
 		for point in room.get("breach_tiles", []):
 			if holes.size() < MAX_HAZARDS:
-				holes.append(ship.pixel_point(point, 0.082))
-	var signature := str(fires) + ":" + str(holes)
+				var location: Vector3 = ship.pixel_point(point, 0.082)
+				holes.append(location)
+				var oxygen := clampf(float(room.get("oxygen", 100.0)) / 100.0, 0.0, 1.0)
+				if oxygen > 0.0:
+					air.append(location)
+					air_strength.append(oxygen)
+	var signature := str(fires) + ":" + str(holes) + ":" + str(air) + ":" + str(air_strength)
 	if signature == native_signature:
 		return
 	native_signature = signature
 	fire_points = fires
 	breach_points = holes
-	flame_outer.multimesh.instance_count = fires.size()
-	flame_inner.multimesh.instance_count = fires.size()
-	breaches.multimesh.instance_count = holes.size()
-	air_streams.multimesh.instance_count = holes.size()
+	breach_air_points = air
+	breach_air_strengths = air_strength
+	for entry in [[flame_outer, fires.size()], [flame_inner, fires.size()], [breaches, holes.size()], [air_streams, air.size()]]:
+		var batch: MultiMeshInstance3D = entry[0]
+		if batch.multimesh.instance_count != entry[1]:
+			batch.multimesh.instance_count = entry[1]
 	for i in range(holes.size()):
 		breaches.multimesh.set_instance_transform(i, Transform3D(Basis().rotated(Vector3.UP, (i % 4) * PI / 2.0), holes[i]))
 	_render_animation()
 
 
 func animate(delta: float) -> void:
-	if fire_points.is_empty() and breach_points.is_empty():
+	if fire_points.is_empty() and breach_air_points.is_empty():
 		return
 	animation_time += delta
 	_render_animation()
@@ -98,6 +113,7 @@ func _render_animation() -> void:
 		outer = Basis(outer.x * (0.92 + sin(phase) * 0.07), outer.y * (0.87 + sin(phase + 0.8) * 0.16), outer.z)
 		flame_outer.multimesh.set_instance_transform(i, Transform3D(outer, fire_points[i]))
 		flame_inner.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.0, 0.88 + sin(phase + 1.7) * 0.18, 1.0)), fire_points[i]))
-	for i in range(breach_points.size()):
+	for i in range(breach_air_points.size()):
 		var phase := fposmod(animation_time * 0.7 + i * 0.19, 1.0)
-		air_streams.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.0, 0.6 + phase * 0.6, 1.0)), breach_points[i] + Vector3.UP * phase * 0.025))
+		air_streams.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3(1.0, 0.6 + phase * 0.6, 1.0)), breach_air_points[i] + Vector3.UP * phase * 0.035))
+		air_streams.multimesh.set_instance_color(i, Color(1, 1, 1, (1.0 - phase) * minf(0.72, breach_air_strengths[i])))

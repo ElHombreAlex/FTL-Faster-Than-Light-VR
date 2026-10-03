@@ -131,7 +131,7 @@ class HelpCanvas extends Control:
 		_label("DPAD / VIEW", Vector2(28, 369), 19, MUTED)
 		_leader(Vector2(312, 252), Vector2(431, 366), 434)
 		_badge("UP", Vector2(28, 394), 49)
-		_label("Shortcuts", Vector2(91, 394), 20)
+		_label("System Power", Vector2(91, 394), 20)
 		_badge("VIEW",Vector2(296,394),72)
 		_label("Pause",Vector2(380,394),20)
 		_badge("L / R", Vector2(28, 425), 72)

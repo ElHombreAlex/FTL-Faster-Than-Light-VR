@@ -2,6 +2,7 @@ extends Node3D
 
 const ShipModel = preload("res://scripts/ship_model.gd")
 const HudSurface = preload("res://scripts/hud_surface.gd")
+const HudAnchor = preload("res://scripts/hud_anchor.gd")
 const ShortcutWheel = preload("res://scripts/shortcut_wheel.gd")
 const CombatEffects = preload("res://scripts/combat_effects.gd")
 const SpaceEnvironment = preload("res://scripts/space_environment.gd")
@@ -21,6 +22,10 @@ var player_ship: Node3D
 var enemy_ship: Node3D
 var nav_panel: Node3D
 var hud_surface: Node3D
+var hud_anchor := HudAnchor.new()
+var gameplay_hud := false
+const GAMEPLAY_HUD_RECT := Rect2(0, 0, 872, 510)
+const GAMEPLAY_HUD_SIZE := Vector2(1.10, 1.10 * 510.0 / 872.0)
 var combat_effects: Node3D
 var hud_state: Dictionary = {}
 var seen_shots: Dictionary = {}
@@ -82,7 +87,7 @@ var power_remove_was_down := false
 var power_previous_was_down := false
 var power_next_was_down := false
 var power_hover_key := ""
-var shortcuts_was_down := false
+var power_page_was_down := false
 var tracking_label: Label3D
 var diagnostics_elapsed := 0.0
 var diagnostics_signature := ""
@@ -227,21 +232,72 @@ func _update_ship_positions() -> void:
 
 func _create_hud() -> void:
 	hud_surface = HudSurface.new()
-	hud_surface.position = Vector3(0.0, -0.16, -1.8)
-	hud_surface.scale = Vector3.ONE * 0.64
 	hud_surface.render_order = 100
-	camera.add_child(hud_surface)
+	add_child(hud_surface)
 	hud_surface.canvas.use_original_frame = not demo_mode
 	pause_label = Label3D.new()
 	pause_label.font = UiAssets.font("header")
 	pause_label.outline_size = 0
-	pause_label.position = Vector3(0, 0.16, -1.75)
+	pause_label.position = Vector3(0, HudSurface.SURFACE_SIZE.y * 0.5 + 0.025, 0.015)
 	pause_label.font_size = 32
 	pause_label.pixel_size = 0.0008
 	pause_label.no_depth_test = true
 	pause_label.render_priority = 101
 	pause_label.modulate = Color("c6f3da")
-	camera.add_child(pause_label)
+	hud_surface.add_child(pause_label)
+	_sync_hud_layout()
+	_position_hud(0.0, true)
+
+
+func _gameplay_hud_mode() -> bool:
+	if not bool(hud_state.get("ready", demo_mode)) or str(hud_state.get("ui_mode", "")) == "menu":
+		return false
+	# Desktop preview still needs the complete screen for its Tactical/map view;
+	# in VR those views have their own hand/world surfaces with native coordinates.
+	return xr_active or not (hud_state.get("map_open", false) or hud_state.get("tactical", false))
+
+
+func _sync_hud_layout() -> void:
+	if hud_surface == null:
+		return
+	var next_mode := _gameplay_hud_mode()
+	if gameplay_hud != next_mode:
+		gameplay_hud = next_mode
+		hud_anchor.reset()
+	if gameplay_hud:
+		hud_surface.set_crop(GAMEPLAY_HUD_RECT, GAMEPLAY_HUD_SIZE)
+	else:
+		hud_surface.set_crop(Rect2(0, 0, 1280, 720), HudSurface.SURFACE_SIZE)
+	pause_label.position = Vector3(0, hud_surface.surface_size.y * 0.5 + 0.025, 0.015)
+
+
+func _player_hud_local_bounds() -> AABB:
+	var bounds := AABB(player_ship.shield_center - player_ship.shield_radii, player_ship.shield_radii * 2.0)
+	# Keep the envelope even when shields are depleted, preventing the HUD from
+	# dropping through crew/weapons or jumping when shields recharge.
+	for rect: Rect2 in player_ship.room_bounds.values():
+		bounds = bounds.expand(Vector3(rect.position.x, -0.16, rect.position.y))
+		bounds = bounds.expand(Vector3(rect.end.x, 0.35, rect.end.y))
+	var image: Dictionary = player_ship.layout_data.get("image_rect", {})
+	if not image.is_empty():
+		var first: Vector2 = (Vector2(float(image.get("x", 0)), float(image.get("y", 0))) / 35.0 - player_ship.layout_center) * ShipModel.TILE
+		var last: Vector2 = first + Vector2(float(image.get("w", 0)), float(image.get("h", 0))) / 35.0 * ShipModel.TILE
+		bounds = bounds.expand(Vector3(first.x, -0.16, first.y))
+		bounds = bounds.expand(Vector3(last.x, 0.35, last.y))
+	return bounds
+
+
+func _position_hud(delta: float, snap := false) -> void:
+	if hud_surface == null or camera == null:
+		return
+	var viewer := camera.get_camera_transform()
+	if gameplay_hud:
+		hud_surface.global_transform = hud_anchor.update(player_ship.global_transform, _player_hud_local_bounds(), viewer, GAMEPLAY_HUD_SIZE, delta, snap)
+	else:
+		# Preserve the old full native menu framing; the HUD node itself can remain
+		# outside the camera so gameplay can clamp its head-relative pose above
+		# the ship when necessary.
+		hud_surface.global_transform = viewer * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * 0.64), Vector3(0, -0.16, -1.8))
 
 
 func _create_navigation() -> void:
@@ -314,7 +370,7 @@ func _create_navigation() -> void:
 	legend.pixel_size = 0.001
 	legend.no_depth_test = true
 	legend.render_priority = 123
-	legend.text = "Dpad ◀ / ▶: screen   ▼: pause   ▲: shortcuts\nL trigger: stations   R bumper: 1–8 wheel"
+	legend.text = "Dpad ◀ / ▶: screen   ▼: tactical   ▲: power\nView: pause   R bumper: 1–8 wheel"
 	nav_panel.add_child(legend)
 	legend.visible = false
 	help_label = ControllerHelp.new()
@@ -330,7 +386,7 @@ func _create_navigation() -> void:
 	tracking_label = Label3D.new()
 	tracking_label.font = UiAssets.font("body")
 	tracking_label.outline_size = 0
-	tracking_label.position = Vector3(0, -0.86, -1.8)
+	tracking_label.position = Vector3(0.28, -0.34, -1.4)
 	tracking_label.font_size = 24
 	tracking_label.pixel_size = 0.0008
 	tracking_label.no_depth_test = true
@@ -535,6 +591,12 @@ func _toggle_tactical() -> void:
 	_open_hand_page("navigation" if hud_state.get("tactical", false) else "tactical")
 
 
+func _toggle_power_page() -> void:
+	if rename_keyboard.visible or not hud_state.get("ready", demo_mode) or hud_state.get("ui_mode", "") == "menu":
+		return
+	_open_hand_page("navigation" if nav_page == "power" else "power")
+
+
 func _change_system_power(direction: int) -> void:
 	if nav_page != "power" or not _game_actions_available():
 		return
@@ -566,6 +628,10 @@ func _update_wheel() -> void:
 		wheel.visible = not rename_keyboard.visible and (hud_state.get("event_open", false) or _game_actions_available())
 		_refresh_wheel()
 	if wheel.visible:
+		if not hud_state.get("event_open", false) and not _game_actions_available():
+			wheel_committed = true
+			wheel.visible = false
+			return
 		wheel.global_position = _pointer_ray().from + Vector3(0, 0.17, -0.1)
 		_face_front(wheel)
 		wheel.choose(right_hand.get_vector2("primary"))
@@ -588,9 +654,7 @@ func _refresh_wheel() -> void:
 		return
 	var player: Dictionary = hud_state.get("player", {})
 	if wheel_category == 0:
-		for i in range(8):
-			entries.append({"label": "W%d" % (i + 1) if i < 4 else "D%d" % (i - 3), "key": 49 + i,
-				"enabled": i < player.get("weapons", []).size() if i < 4 else i - 4 < int(hud_state.get("drone_slots", 0))})
+		entries = ShortcutWheel.equipment_entries(player, int(hud_state.get("drone_slots", 0)))
 		wheel.set_entries(entries, "WEAPONS\nDRONES")
 	elif wheel_category == 1:
 		var systems: Dictionary = player.get("systems", {})
@@ -605,7 +669,7 @@ func _refresh_wheel() -> void:
 
 
 func _commit_wheel() -> void:
-	if rename_keyboard.visible:
+	if rename_keyboard.visible or (not hud_state.get("event_open", false) and not _game_actions_available()):
 		wheel_committed = true
 		wheel.visible = false
 		return
@@ -689,10 +753,10 @@ func _process(delta: float) -> void:
 		if tactical_down and not tactical_was_down:
 			_toggle_tactical()
 		tactical_was_down = tactical_down
-		var shortcuts_down := left_hand.is_button_pressed("by_button") and (frame or nav_page != "power")
-		if shortcuts_down and not shortcuts_was_down:
-			_open_hand_page("shortcuts" if nav_page != "shortcuts" else "navigation")
-		shortcuts_was_down = shortcuts_down
+		var power_page_down := left_hand.is_button_pressed("by_button") and (frame or nav_page != "power")
+		if power_page_down and not power_page_was_down:
+			_toggle_power_page()
+		power_page_was_down = power_page_down
 		var page_left := left_hand.is_button_pressed("page_left")
 		var page_right := left_hand.is_button_pressed("page_right")
 		if page_left and not page_left_was_down:
@@ -726,6 +790,7 @@ func _process(delta: float) -> void:
 		if hover_elapsed >= 0.12 and not wheel.visible:
 			hover_elapsed = 0.0
 			_hover_ui(ray.from, ray.direction)
+	_position_hud(delta)
 
 
 func _face_navigation_to_headset(delta: float = 1.0 / 90.0) -> void:
@@ -1007,6 +1072,8 @@ func _update_hud() -> void:
 	pause_label.visible = bool(state.get("ready", demo_mode)) and not rename_keyboard.visible and player_paused
 	player_ship.set_shields(shield_level, int(state.get("super_shield", 0)))
 	enemy_ship.set_shields(int(state.get("enemy_shield", 2)), int(state.get("enemy_super_shield", 0)))
+	_sync_hud_layout()
+	_position_hud(0.0)
 
 
 func _demo_shot(kind: String, source: String) -> void:
@@ -1308,6 +1375,7 @@ func _navigation_entries() -> Array:
 				if hud_state.get("navigation", {}).get(name, false):
 					entries.append([name.to_upper(), name])
 			entries.append(["SHORTCUTS", "page:shortcuts"])
+			entries.append(["SYSTEM POWER", "page:power"])
 			entries.append(["TACTICAL VIEW", "tactical"])
 		entries.append(["MENU / BACK", "menu"])
 		entries.append(["CONTROLS / HELP", "page:help"])
@@ -1389,7 +1457,7 @@ func _refresh_navigation() -> void:
 func _hover_ui(from: Vector3, direction: Vector3) -> void:
 	if keyboard_press or rename_keyboard.visible:
 		return
-	if nav_page == "power":
+	if nav_page == "power" and _game_actions_available():
 		# Local card hover is handled before power buttons every frame. A
 		# stationary ray must not undo a system selected with X/Y.
 		return
@@ -1565,6 +1633,8 @@ func _recenter() -> void:
 			tabletop_root.global_position = head + Vector3(0, -0.95, -0.85)
 	else:
 		tabletop_root.position.y = 0.7
+	hud_anchor.reset()
+	_position_hud(0.0, true)
 
 
 func _local_data_path(file_name: String) -> String:

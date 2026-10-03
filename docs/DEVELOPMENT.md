@@ -29,13 +29,13 @@ After installing the documented Python requirements, run from the repository roo
 python -m unittest discover -s tools -p "test_*.py"
 ```
 
-The last development revision passed **27 Python tests**. They exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering and raw frame publication. They do not launch FTL. Temporary fixture files are created by the tests.
+The current prepared source passed **38 Python tests**, including empty native drone-list and portable-launcher regressions. The tests exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering, raw frame publication and launcher preflight/error handling. They do not launch FTL. Temporary fixture files are created by the tests. Godot suites and focused native checks are recorded in [STATUS](STATUS.md); physical headset coverage remains separate.
 
 ## Godot checks
 
 Use a **separate development checkout or disposable local-data folder** with the required extracted assets. Some suites write screenshots/test frames under `local_game_data/`; do not run them over an active production bridge or package those outputs. Create the local output folder before graphical suites if it is missing.
 
-The seven suites below passed in the previous configured development environment. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete.
+The nine suites below passed for the current prepared source in the configured development environment, including the latest HUD/wheel/bar corrections. See [STATUS](STATUS.md) for evidence and limits. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete.
 
 ```powershell
 godot --headless --xr-mode off --path . --script tools/test_combat.gd -- --demo
@@ -45,9 +45,11 @@ godot --headless --xr-mode off --path . --script tools/test_environment.gd -- --
 godot --xr-mode off --path . --script tools/test_ui.gd -- --desktop
 godot --xr-mode off --path . --script tools/test_controller_ui.gd -- --demo --desktop
 godot --xr-mode off --path . --script tools/test_frame_transport.gd -- --desktop
+godot --headless --xr-mode off --path . --script tools/test_hud_layout.gd -- --desktop
+godot --headless --xr-mode off --path . --script tools/test_damage_visuals.gd -- --demo --desktop
 ```
 
-The UI/controller/transport suites use actual GPU rendering, so keep their graphical mode. Headless runs of them are not equivalent verification. These suites cover effects, room/beam picking, controller context/bindings, model/task distinctions, environmental presentation, original local fonts, UI priority/crops and the raw frame protocol.
+The UI/controller/transport suites use actual GPU rendering, so keep their graphical mode. Headless runs of them are not equivalent verification. These suites cover effects, room/beam picking, controller context/bindings, model/task distinctions, environmental presentation, original local fonts, UI priority/crops and the raw frame protocol. HUD-layout checks cover headset-relative placement, swept collision prevention and transformed ship/shield clearance. Controller checks include native empty/malformed equipment collections. Damage-visual checks cover permission-aware room colors, absence of floor status bars, native miss presentation and oxygen-dependent breach effects.
 
 No test command above drives a native game or modifies its saves. Separate **live bridge checks** do run the game and can advance a run or change equipment/state.
 
@@ -63,6 +65,8 @@ python tools/launch.py --smoke
 `--check` performs preflight without launching. `--smoke` launches the actual isolated game and desktop client, then requests client shutdown after a short interval and checks cleanup. It uses the configured VR save prefix, takes the normal pre-launch backup and may save game state on exit; it is not a purely synthetic test.
 
 When adding a system or command, compare the visible native outcome and snapshot: installed-system availability, native power step, target room/ship, actual crew position, resource change or event transition. A target being accepted does not establish that its eventual effect completed. Hacking attachment/effects, native beam/bomb encounter coverage and full campaigns remain areas for further verification.
+
+A preceding native missed-event check used a private projectile and forced `Evasion.MISS` to exercise the actual flag/event path. It is integration evidence, not a measurement of random evasion probabilities. Enemy room condition colors respect the native visibility rules; floor health/status bars are no longer rendered. Do not infer permission to reveal other hidden state from public icon color or crew-room fog alone.
 
 The preparer, resolver and launcher reject unknown executable fingerprints. To support another executable, identify a known owned build, implement and validate a complete matching route and keep the rejection path. Do not disable fingerprint checks or reuse addresses from a different build.
 

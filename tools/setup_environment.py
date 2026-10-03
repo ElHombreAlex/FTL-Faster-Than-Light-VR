@@ -7,7 +7,6 @@ copies, patches, launches or attaches to FTL. --check and --dry-run are read-onl
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import shutil
@@ -61,46 +60,11 @@ def setup(dry_run: bool = False) -> None:
 
 def check(desktop: bool = False) -> None:
     require_platform()
-    missing = [name for name in ("frida", "PIL", "numpy", "capstone")
-               if importlib.util.find_spec(name) is None]
-    if missing:
-        raise ValueError("Missing Python packages: " + ", ".join(missing) + ". Run SETUP.cmd first.")
-    if not CONFIG.is_file():
-        raise ValueError("Missing local_game_data/launcher.json. Run SETUP.cmd and edit its paths.")
-    config = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
-    if not isinstance(config, dict):
-        raise ValueError("launcher.json must contain a JSON object with lab, hooks and godot paths.")
-    for key in ("lab", "hooks", "godot"):
-        if not isinstance(config.get(key), str) or not config[key].strip():
-            raise ValueError(f"launcher.json needs a nonempty {key} path.")
-        if not Path(config[key]).is_absolute():
-            raise ValueError(f"Use an absolute path for {key} in launcher.json.")
-    lab = Path(config["lab"])
-    if not lab.is_dir():
-        raise ValueError("The configured lab directory does not exist. Complete isolated lab preparation.")
-    for key in ("hooks", "godot"):
-        if not Path(config[key]).is_file():
-            raise ValueError(f"The configured {key} file does not exist: {config[key]}")
-    if not (lab / "ftlvr-lab.json").is_file():
-        raise ValueError("The configured lab has no ftlvr-lab.json marker. Complete isolated lab preparation.")
-    marker = json.loads((lab / "ftlvr-lab.json").read_text(encoding="utf-8-sig"))
-    if not isinstance(marker, dict):
-        raise ValueError("The lab marker is malformed. Use a correctly prepared isolated lab.")
-    source = marker.get("source_game")
-    if not isinstance(source, str) or not (Path(source) / "ftl.dat").is_file():
-        raise ValueError("The owned original installation recorded by the lab is unavailable. Restore that path.")
-    if not (LOCAL / "manifest.json").is_file():
-        raise ValueError("Local game assets are missing. Run tools/extract_ftl.py on your owned ftl.dat.")
-    manifest = json.loads((LOCAL / "manifest.json").read_text(encoding="utf-8-sig"))
-    if not isinstance(manifest, dict):
-        raise ValueError("The local asset manifest is malformed. Run tools/extract_ftl.py again.")
-    if not manifest.get("ships") or not manifest.get("fonts") or not manifest.get("ui_assets"):
-        raise ValueError("Local extraction is incomplete. Run tools/extract_ftl.py again.")
     # The production launcher's own checks include executable fingerprints,
     # required hook families, dependencies, loader and the OpenXR runtime.
     sys.dont_write_bytecode = True
-    from launch import preflight
-    result = preflight(config, desktop=desktop)
+    from launch import load_config, preflight
+    result = preflight(load_config(CONFIG), desktop=desktop)
     print(json.dumps(result, indent=2))
     print("Setup checks passed. No game was launched or modified.")
     print("This checks readiness; it does not measure headset performance.")

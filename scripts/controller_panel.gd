@@ -140,6 +140,20 @@ func selected_system() -> Dictionary:
 	return {}
 
 
+func reactor_display() -> Dictionary:
+	# The bridge supplies FTL's capped reactor calculation. GetAvailablePower
+	# alone includes bars disabled by a storm; never show those as free units
+	# or mix separately counted battery/Zoltan power into the reactor total.
+	var total := clampi(int(reactor.get("usable_total", reactor.get("total", reactor.get("max", 0)))), 0, 50)
+	var installed := clampi(int(reactor.get("installed", total)), total, 50)
+	return {"total":total, "installed":installed,
+		"free":clampi(int(reactor.get("usable_available", reactor.get("available", reactor.get("current", 0)))), 0, total),
+		"cap_loss":clampi(int(reactor.get("cap_loss", installed - total)), 0, installed),
+		"storm_loss":clampi(int(reactor.get("storm_loss", 0)), 0, installed),
+		"battery_free":maxi(0, int(reactor.get("battery_available", 0))),
+		"battery_total":maxi(0, int(reactor.get("battery_total", 0)))}
+
+
 func power_card_rect(index: int) -> Rect2:
 	var count := maxi(1,power_rows.size())
 	var rows_per_column := ceili(count / 2.0)
@@ -204,25 +218,33 @@ class PanelCanvas extends Control:
 				var rect := Rect2(center - Vector2(250,41.875),Vector2(500,83.75))
 				UI.button(self,rect,str(item.get("label","")),item.get("enabled",true))
 			if low_buttons:
-				UI.centered_text(self,"DPAD L/R: SCREEN   DOWN: TACTICAL   VIEW: PAUSE",Vector2(575,877),22,UI.MUTED)
+				UI.centered_text(self,"UP: POWER   L/R: SCREEN   DOWN: TACTICAL   VIEW: PAUSE",Vector2(575,877),22,UI.MUTED)
 			else:
 				draw_line(Vector2(38,829),Vector2(1112,829),UI.MUTED,1)
-				UI.centered_text(self,"DPAD L/R: SCREEN   DOWN: TACTICAL   VIEW: PAUSE",Vector2(575,850),24,UI.MUTED)
+				UI.centered_text(self,"UP: POWER   L/R: SCREEN   DOWN: TACTICAL   VIEW: PAUSE",Vector2(575,850),24,UI.MUTED)
 				UI.centered_text(self,"LEFT TRIGGER: STATIONS   RIGHT BUMPER: ACTION WHEEL",Vector2(575,877),22,UI.INK)
 
 
 	func _draw_power() -> void:
 		UI.text(self,"REACTOR",Vector2(31,108),27,UI.INK)
-		var total := clampi(int(panel.reactor.get("total",panel.reactor.get("max",0))),0,50)
-		var available := clampi(int(panel.reactor.get("available",panel.reactor.get("current",0))),0,total)
+		var power: Dictionary = panel.reactor_display()
+		var total := int(power.total)
+		var available := int(power.free)
+		var installed := int(power.installed)
+		if int(power.cap_loss) > 0:
+			UI.centered_text(self,"STORM -%d" % int(power.storm_loss) if int(power.storm_loss) > 0 else "LIMIT -%d" % int(power.cap_loss),Vector2(94,134),18,ION_POWER)
 		UI.frame(self,Rect2(41,145,103,610),UI.PANEL,UI.EDGE,9)
-		var pitch := minf(20,562.0 / maxi(1,total))
-		for cell in range(total):
+		var pitch := minf(20,562.0 / maxi(1,installed))
+		for cell in range(installed):
 			var rect := Rect2(57,731 - cell * pitch,71,pitch - 3)
 			draw_rect(rect,UI.GREEN if cell < available else UI.DARK)
-			draw_rect(rect,UI.EDGE,false,1)
+			draw_rect(rect,ION_POWER if cell >= total else UI.EDGE,false,1)
+			if cell >= total: draw_line(rect.position,rect.end,ION_POWER,1)
 		UI.centered_text(self,"%d/%d" % [available,total],Vector2(94,779),32,UI.GREEN)
 		UI.centered_text(self,"FREE",Vector2(94,809),22,UI.MUTED)
+		if int(power.battery_total) > 0:
+			UI.centered_text(self,"BATTERY",Vector2(94,839),18,BATTERY)
+			UI.centered_text(self,"%d/%d" % [int(power.battery_free),int(power.battery_total)],Vector2(94,865),23,BATTERY)
 		for i in range(panel.power_rows.size()):
 			var row: Dictionary = panel.power_rows[i]
 			var rect: Rect2 = panel.power_card_rect(i)

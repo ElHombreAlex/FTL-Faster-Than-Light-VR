@@ -62,6 +62,15 @@ This creates `.venv`, installs `requirements.txt` there and copies the example c
 
 You can inspect its actions first with `SETUP.cmd --dry-run`. If the Windows `python` command opens the Microsoft Store, install Python from python.org with the Python launcher, reopen the terminal and retry.
 
+The scripts keep setup and launch failures visible when double-clicked. `SETUP.cmd` ignores the Microsoft Store Python alias. If you already have a real Python installation without a launcher or PATH entry, select it for this terminal session:
+
+```powershell
+$env:FTLVR_PYTHON = "C:\Tools\Python312\python.exe"
+.\SETUP.cmd
+```
+
+Each checkout needs its own `.venv` and `local_game_data/` configuration/assets. Cloning the repository or copying the source does not copy that ignored local setup. You may reuse the same verified isolated lab and Godot installation in the new configuration, then rerun extraction for the new checkout. Close the previous client before launching another checkout against that lab.
+
 ## 3. Prepare and activate the isolated game
 
 Check that the unpacked Hyperspace release contains:
@@ -145,6 +154,8 @@ Checks verify dependencies, local extraction, the recorded original archive, the
 # Or inspect the live client without a headset:
 .\RUN-DESKTOP.cmd
 ```
+
+`RUN-FTL-VR.cmd` and `RUN-FTL-DESKTOP.cmd` are aliases for these launchers. Options are forwarded, so `RUN-DESKTOP.cmd --check` checks the same paths and assets used by a normal launch without starting the game. For scripted checks, set `$env:FTLVR_NO_PAUSE = "1"` to disable the pause after an error.
 
 The launcher backs up the separate VR save files and lab settings, starts the isolated FTL bridge, waits for fresh live state/capture and starts Godot. It can take up to roughly one minute to establish the bridge; failure details appear in the local logs.
 

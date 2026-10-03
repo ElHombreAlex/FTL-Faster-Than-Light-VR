@@ -21,7 +21,7 @@ Open **Controls / Help** on the left panel for an illustrated controller diagram
 | Right stick direction | Select a wheel slot; release bumper to confirm |
 | Left Dpad Down | Open or close Tactical |
 | Left View | Pause or resume |
-| Left Dpad Up | Open or close Shortcuts |
+| Left Dpad Up | Open or close System Power |
 | Left Dpad Left / Right | Previous / next hand-screen page |
 | Left grip, held + hand motion | Move the encounter |
 | Left stick horizontal / vertical | Rotate / resize the encounter |
@@ -29,7 +29,7 @@ Open **Controls / Help** on the left panel for an illustrated controller diagram
 | Left trigger | Return crew to stations, except on System Power |
 | Right grip + left trigger | Save stations, except on System Power |
 
-The page order is **Navigation → Tactical → Shortcuts → System Power → Jump → Help**. Point at an available panel button with the right controller and pull the right trigger. Jump, Ship and Store are offered according to native game availability.
+The page order is **Navigation → Tactical → Shortcuts → System Power → Jump → Help**. Navigation includes a direct **SYSTEM POWER** button as well as Shortcuts. Point at an available panel button with the right controller and pull the right trigger. Jump, Ship and Store are offered according to native game availability.
 
 ## System Power page
 
@@ -42,7 +42,7 @@ This page changes the contextual controls below. **Steam Frame X/Y are on the ri
 | Left trigger | Add one native power step to the selected system |
 | Left bumper | Remove one native power step |
 
-The game decides whether a change is allowed. One engine step changes one power bar; one shield step normally changes two. Damage, ion locks, capacity, bonus power and battery power follow the actual game state. The reactor column shows available power. A stationary pointer does not continuously override X/Y selection.
+The game decides whether a change is allowed. One engine step changes one power bar; one shield step normally changes two. Damage, ion locks, capacity, bonus power and battery power follow the actual game state. The reactor column shows **usable free reactor power after environmental limits**: storm/capped bars are marked separately, and battery availability remains a separate counter. A stationary pointer does not continuously override X/Y selection.
 
 ## Crew, doors and room targeting
 
@@ -59,7 +59,7 @@ Enemy inspection reveals room roles; it does not reveal crew or hazards that FTL
 
 Hold the **right bumper**, move the right stick toward a slot and release the bumper to activate it. Returning the stick to the center cancels. Right trigger confirms immediately; B cancels. Right A changes the category.
 
-The wheel starts with weapon slots 1–4 and drone slots 5–8. Other categories provide system power and system actions. Uninstalled or unavailable entries cannot activate. When a choice event is open, the wheel becomes a choice selector for entries 1–8; original dialog controls remain pointable.
+The wheel starts with weapon slots 1–4 and drone slots 5–8. Equipped weapons/drones show their native localized names; weapon-family silhouettes and ammo captions distinguish similar equipment. Long names are clipped inside their sector, with a wider selected-name caption below. Numbers remain the original native shortcuts. Other categories provide system power and system actions. Uninstalled or unavailable entries cannot activate. When a choice event is open, the wheel becomes a choice selector for entries 1–8; original dialog controls remain pointable.
 
 Shift and Ctrl also apply when confirming relevant wheel or shortcut commands.
 
@@ -82,7 +82,9 @@ These are native key equivalents shown on buttons, not extra physical controller
 
 **Jump** opens the actual sector map above and ahead of the installed piloting room. Point at a beacon using the right controller and use the original confirmation controls. The map follows the ship's cockpit and orientation. **Close Map** returns to the encounter.
 
-Events, Store (including BUY/SELL), upgrades, crew and equipment windows float above the player ship. Their original localized controls stay interactive. Main menus remain 2D. The original HUD follows the headset; the hand panel has visual and pointing priority where it overlaps the HUD.
+Events, Store (including BUY/SELL), upgrades, crew and equipment windows float above the player ship. Their original localized controls stay interactive. Main menus remain complete, head-relative 2D views.
+
+Gameplay uses a **compact HUD anchored to the headset**, retaining native upper status and the crew roster while removing the lower weapons/reactor/system/subsystem strip. Use Power, Shortcuts or the wheel for those lower-strip actions. The HUD keeps a fixed readable size and follows the headset whenever there is room. If that movement would carry the panel into the ship or shield, it stops above the ship until clearance permits headset-relative placement again. A raised or oversized table can therefore raise the panel during overlap. The hand panel retains visual and pointing priority where it overlaps the HUD. Desktop Tactical/map inspection keeps the complete native view.
 
 To rename a ship or crew member, click its original name-edit field. A floating **QWERTY keyboard** appears:
 

@@ -144,6 +144,10 @@ func _draw() -> void:
 		var transport_rect := Rect2(source_rect.position * original_frame.get_size() / NATIVE_SIZE, source_rect.size * original_frame.get_size() / NATIVE_SIZE)
 		draw_texture_rect_region(original_frame, Rect2(Vector2.ZERO, size), transport_rect)
 		return
+	# Demo/fallback art uses native coordinates just like the live texture. The
+	# viewport clips the cropped lower controls instead of shrinking them into it.
+	var crop_scale := size / source_rect.size
+	draw_set_transform(-source_rect.position * crop_scale, 0.0, crop_scale)
 	_art("statusUI/top_hull.png", Vector2(5, 0))
 	_art("statusUI/top_hull_label.png", Vector2(5, 0))
 	_text("HULL", Vector2(12, 22), 18, Color(0.04, 0.12, 0.13))

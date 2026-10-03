@@ -44,13 +44,17 @@ Godot uses this state to place and animate visual actors. Native positions, curr
 
 Projectiles originate from native weapon/drone locations and follow native shot information. Rendering does not determine hits or damage. Pause freezes presentation clocks while keeping actual native paused projectiles visible and removing stale shots. Environmental animation conveys the current hazard; exact hazard timing remains a polish/verification area.
 
+The native missed flag and a post-update event feed evasion feedback so brief missed shots can produce a single MISS cue even between snapshot deliveries. Room condition colors respect native information permissions; role icons and hazards remain, without floor health/status bars or counters. Reactor snapshots distinguish raw availability from usable availability after native capacity/environmental limits; battery availability is separate. Equipped localized weapon/drone metadata is distinct from deployed drone actors, keeping wheel labels tied to actual shortcut slots. Optional collections are normalized by the bridge and parsed defensively by the wheel: Lua may encode an empty table as `{}` rather than `[]`.
+
 ## Original HUD and floating windows
 
-The game renders its original HUD into a separate native framebuffer. This retains native fonts, localization, power widgets, tooltips and values even when the normal backbuffer displays Tactical, the map or a window. The bridge removes unwanted world/enemy HUD pixels for the headset layer and preserves complete native window content for floating panels.
+The game renders its original HUD into a separate native framebuffer. This retains native fonts, localization and values even when the normal backbuffer displays Tactical, the map or a window. The bridge removes unwanted world/enemy HUD pixels and preserves complete native window content for floating panels. Gameplay crops the upper native status and crew region to a fixed-size headset-relative panel, omitting the lower strip; Power/Shortcuts/the wheel supply those actions. Main menus and desktop Tactical/map views retain full framing.
+
+[hud_anchor.gd](../scripts/hud_anchor.gd) gives the headset-relative pose priority and keeps fixed metre dimensions for readable text. Collision checks use the transformed hull/shield envelope and the panel's swept movement. Only a potential intersection engages the above-ship clamp; looking down cannot pass the HUD through the ship. The panel returns to headset-relative placement when clearance permits. Pause is attached above the same HUD panel.
 
 Transport uses atomic raw RGBA files with an `FVR1` header, dimensions, sequence and timestamp. Tactical is captured at a target **30 Hz / 960×540**; map/windows retain **1280×720**. The independent HUD targets **10 Hz / 1280×720**. Native input coordinates remain **1280×720** regardless of capture resolution. PNG previews update at about 1 Hz and are diagnostics rather than the live transport.
 
-The client reuses textures, reads only fresh frames and renders UI subviewports on changes. HUD/panel crops and alpha-aware pointing preserve native control coordinates. The hand panel receives priority over the headset HUD where they overlap. Rooms use floor intersections for targeting and crew drops, avoiding doors or miniatures blocking the intended destination.
+The client reuses textures, reads only fresh frames and renders UI subviewports on changes. HUD/panel crops and alpha-aware pointing preserve native control coordinates. The hand panel receives priority over the gameplay HUD where they overlap. Rooms use floor intersections for targeting and crew drops, avoiding doors or miniatures blocking the intended destination.
 
 ## Local assets and generated data
 

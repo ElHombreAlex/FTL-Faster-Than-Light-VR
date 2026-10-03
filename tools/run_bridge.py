@@ -97,7 +97,7 @@ def decode_state_line(line):
         result['projectiles'] = []
     for side in ('player','enemy'):
         if isinstance(result.get(side),dict):
-            for field in ('rooms','crew','weapons','doors','drones','system_status'):
+            for field in ('rooms','crew','weapons','doors','drones','drone_equipment','system_status'):
                 if not isinstance(result[side].get(field),list): result[side][field]=[]
             for room in result[side]['rooms']:
                 for field in ('fire_tiles','breach_tiles'):

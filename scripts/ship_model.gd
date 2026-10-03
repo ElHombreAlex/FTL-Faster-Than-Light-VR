@@ -308,6 +308,24 @@ func _set_room_role(area: Area3D, role: String) -> void:
 	area.add_child(label)
 
 
+func _set_room_condition(area: Area3D, row: Dictionary, allowed: bool) -> float:
+	# Damage stays in the installed-system icon and floor colour. Native
+	# state changes update these cues immediately, including during pause.
+	var maximum := clampi(int(row.get("max_health", 0)), 0, 32)
+	var health := clampi(int(row.get("health", maximum)), 0, maximum)
+	var has_health := row.has("health") and row.has("max_health") and maximum > 0
+	var shown := allowed and has_health and not str(area.get_meta("system_role", "")).is_empty()
+	var fraction := float(maximum - health) / maximum if shown else 0.0
+	var color := Color("f26043") if health == 0 else Color("ffad44")
+	var icon: MeshInstance3D = area.get_node_or_null("SystemIcon")
+	var role: Label3D = area.get_node_or_null("SystemRole")
+	var role_color := color if fraction > 0.0 else Color("fff2c4") if enemy else Color("223844")
+	if icon != null:
+		icon.material_override.albedo_color = role_color
+	if role != null:
+		role.modulate = role_color
+	return fraction
+
 func set_drop_target(room_id: int = -1) -> void:
 	if drop_target_room == room_id:
 		return
@@ -650,6 +668,10 @@ func pixel_point(point: Dictionary, height: float = 0.18) -> Vector3:
 
 func apply_live(data: Dictionary) -> void:
 	live_data = data
+	var system_rows: Dictionary = {}
+	for row in data.get("system_status", []):
+		if row is Dictionary and row.has("room_id"):
+			system_rows[int(row["room_id"])] = row
 	room_visibility.clear()
 	for room in data.get("rooms", []):
 		room_visibility[int(room["id"])] = bool(room.get("visible", false))
@@ -696,11 +718,25 @@ func apply_live(data: Dictionary) -> void:
 				visual.visible = not enemy or inspect_rooms
 				# Installed systems remain useful targeting information in vanilla
 				# FTL when enemy crew / oxygen are obscured by the sensor fog.
+		var row: Dictionary = system_rows.get(id, {})
+		# Health is private information unless the native snapshot explicitly
+		# reveals it. Old snapshots may reveal only a room's visible interior.
+		var health_allowed := not enemy or bool(row.get("health_visible", room.get("visible", false)))
+		var detail_allowed := not enemy or bool(row.get("health_detail_visible", room.get("visible", false)))
+		var damage_fraction := _set_room_condition(area, row, health_allowed)
 		var floor_mesh: MeshInstance3D = area.get_node("Floor")
 		var oxygen := float(room.get("oxygen", 100)) / 100.0
 		var tint := Color(0.9, 0.22, 0.08) if int(room.get("fires", 0)) > 0 else Color(0.65, 0.7, 0.73).lerp(Color(0.95, 0.38, 0.4), 1.0 - oxygen)
 		if enemy and not bool(room.get("visible", false)):
 			tint = Color(0.12, 0.14, 0.17)
+		if damage_fraction > 0.0:
+			# Public orange/red icons disclose partial/total damage, not exact
+			# levels. Keep that coarse presentation until native details unlock.
+			var severity := damage_fraction if detail_allowed else 1.0 if damage_fraction >= 1.0 else 0.5
+			var strength := 0.4 + severity * 0.45
+			if enemy and not bool(room.get("visible", false)):
+				strength = 0.22 + severity * 0.12
+			tint = tint.lerp(Color("8e2924") if damage_fraction >= 1.0 else Color("c98937"), strength)
 		floor_mesh.set_meta("normal_tint", tint)
 		if id == drop_target_room:
 			tint = Color(0.35, 0.95, 0.71)

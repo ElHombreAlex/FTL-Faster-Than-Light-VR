@@ -54,6 +54,12 @@ end
 local function point(p) return {x=p.x, y=p.y} end
 local function distance(a,b) return math.sqrt((a.x-b.x)^2+(a.y-b.y)^2) end
 
+local function blueprint_title(blueprint, short)
+    return attempt(short and 'blueprint_short_title' or 'blueprint_title', function()
+        return short and blueprint:GetNameShort() or blueprint:GetNameLong()
+    end, blueprint.name)
+end
+
 local function drone_snapshot(drone, slot, is_space)
     local id=tostring(drone.selfId)
     if drone.selfId<0 then
@@ -101,8 +107,12 @@ local function ship_snapshot(ship, gui)
     local graph = Hyperspace.ShipGraph.GetShipInfo(ship.iShipId)
     local result = {layout=ship.myBlueprint.layoutFile, image=ship.myBlueprint.imgFile,
         hull=ship.ship.hullIntegrity.first, hull_max=ship.ship.hullIntegrity.second,
-        destroyed=ship.bDestroyed, rooms={}, crew={}, weapons={}, doors={}, drones={},
+        destroyed=ship.bDestroyed, rooms={}, crew={}, weapons={}, doors={}, drones={},drone_equipment={},
         systems={}, system_power={}, system_status={}, room_systems={}}
+    -- Native sensor_4 permits enemy power bars; sensor_2 only reveals rooms.
+    -- Condition colours remain public, just as the native target icons do.
+    local viewer=Hyperspace.ships.player
+    local detailed=ship.iShipId==0 or (viewer and viewer:GetSystemPower(7)>=4)
     for id=0,15 do
         local name=system_names[id]
         if ship:HasSystem(id) then
@@ -114,6 +124,9 @@ local function ship_snapshot(ship, gui)
                 effective_power=system:GetEffectivePower(),health=system.healthState.first,
                 max_health=system.healthState.second,
                 damaged=system.healthState.second-system.healthState.first,
+                health_visible=true,health_detail_visible=detailed or
+                    (system.iHackEffect>0 and system.bUnderAttack),
+                repair_progress=math.min(1,math.max(0,system.fRepairOverTime/100)),
                 ionized=system.iLockCount>0,locked=system:GetLocked(),hacked=system.iHackEffect,
                 powerable=system:GetNeedsPower(),power_cap=system:GetPowerCap(),
                 battery_power=system.iBatteryPower,bonus_power=system.iBonusPower,
@@ -123,9 +136,19 @@ local function ship_snapshot(ship, gui)
         end
     end
     local reactor=Hyperspace.PowerManager.GetPowerManager(ship.iShipId)
-    result.reactor={available=reactor:GetAvailablePower(),total=reactor:GetMaxPower(),
+    local installed=reactor.currentPower.second
+    local total=math.max(0,reactor:GetMaxPower())
+    local raw_available=reactor:GetAvailablePower()
+    local cap_loss=math.max(0,installed-total)
+    -- GetAvailablePower is installed minus allocated, before environmental
+    -- limits. Use the same subtraction as native RenderPowerBar; battery
+    -- remains separate so free reactor bars cannot be counted twice.
+    local usable_available=math.min(total,math.max(0,raw_available-cap_loss))
+    result.reactor={available=usable_available,total=total,
+        usable_available=usable_available,usable_total=total,raw_available=raw_available,
+        cap_loss=cap_loss,storm_loss=Hyperspace.App.world.space.bStorm and cap_loss or 0,
         used=reactor.currentPower.first,installed=reactor.currentPower.second,
-        battery_available=reactor.batteryPower.second-reactor.batteryPower.first,
+        battery_available=math.max(0,reactor.batteryPower.second-reactor.batteryPower.first),
         battery_total=reactor.batteryPower.second}
     local breaches=ship.ship:GetHullBreaches(true)
     local shield = ship:GetShieldPower()
@@ -206,6 +229,9 @@ local function ship_snapshot(ship, gui)
     local drones=ship:GetDroneList()
     for i=0,drones:size()-1 do
         local drone=drones[i]
+        result.drone_equipment[#result.drone_equipment+1]={slot=i,name=drone.blueprint.name,
+            title=blueprint_title(drone.blueprint,false),short_title=blueprint_title(drone.blueprint,true),
+            kind=drone.blueprint.typeName,powered=drone.powered,deployed=drone.deployed}
         -- Hyperspace casts Drone* to its real subclass. Ordinary flying
         -- equipment drones must be included here as well as special vectors.
         if drone.type==2 or drone.type==3 then
@@ -225,6 +251,8 @@ local function ship_snapshot(ship, gui)
         if kind=='burst' then kind='flak' end
         if weapon.blueprint.damage.iIonDamage>0 then kind='ion' end
         result.weapons[#result.weapons+1] = {slot=i, name=weapon.blueprint.name,
+            title=blueprint_title(weapon.blueprint,false),short_title=blueprint_title(weapon.blueprint,true),
+            ammo_cost=weapon.blueprint.missiles,
             kind=kind, powered=weapon.powered, autofire=weapon.autoFiring, charge=weapon.cooldown.first,
             cooldown=weapon.cooldown.second, mount=point(weapon.mount.position),
             charge_fraction=weapon.cooldown.second>0 and math.min(1,math.max(0,weapon.cooldown.first/weapon.cooldown.second)) or 1,
@@ -436,6 +464,17 @@ script.on_internal_event(Defines.InternalEvents.DRONE_FIRE, function(projectile,
             event.end_point=point(projectile.target2)
         end
         events[#events+1]=event
+    end
+    return Defines.Chain.CONTINUE
+end)
+
+-- A missed projectile can leave native space between the 10 Hz snapshots.
+-- Observe the real flag after every native update and retain the result once.
+script.on_internal_event(Defines.InternalEvents.PROJECTILE_UPDATE_POST,function(projectile)
+    local record=projectile_ids[projectile.selfId]
+    if record and projectile.missed and not record.miss_reported then
+        record.miss_reported=true
+        impact(projectile,'miss',projectile.targetId,projectile.target)
     end
     return Defines.Chain.CONTINUE
 end)

@@ -13,6 +13,15 @@ from run_bridge import (decode_state_line, translate_command, full_screen_captur
 
 
 class BridgeTests(unittest.TestCase):
+    def test_empty_native_drone_equipment_does_not_erase_weapons(self):
+        weapons=[{'slot':0,'name':'MISSILES_2','title':'Artemis Missiles','ammo_cost':1},
+                 {'slot':1,'name':'LASER_BURST_3','title':'Burst Laser Mark II','ammo_cost':0}]
+        raw={'protocol':2,'source':'hyperspace','ready':True,
+             'player':{'weapons':weapons,'drone_equipment':{},'crew':{},'drones':{}}}
+        normalized=decode_state_line('FTLVR_STATE '+json.dumps(raw))
+        self.assertEqual(normalized['player']['drone_equipment'],[])
+        self.assertEqual(normalized['player']['weapons'],weapons)
+
     def test_raw_transport_keeps_dimensions_rgba_orientation_and_timestamp(self):
         image=Image.new('RGBA',(960,540),(10,20,30,40))
         image.putpixel((0,0),(1,2,3,4));image.putpixel((0,539),(5,6,7,8))

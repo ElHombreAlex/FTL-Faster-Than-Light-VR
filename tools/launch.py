@@ -16,21 +16,54 @@ from lab_settings import configure
 PROJECT = Path(__file__).resolve().parents[1]
 
 
+def load_config(path):
+    if not path.is_file():
+        raise ValueError('Missing local_game_data/launcher.json. Run SETUP.cmd, then follow docs/INSTALLATION.md.')
+    value = json.loads(path.read_text(encoding='utf-8-sig'))
+    if not isinstance(value, dict):
+        raise ValueError('launcher.json must contain a JSON object with lab, hooks and godot paths.')
+    return value
+
+
 def preflight(config, desktop=False):
+    if os.name != 'nt':
+        raise ValueError('The live game bridge currently supports Windows only.')
     for name in ('lab', 'godot', 'hooks'):
-        if not Path(config[name]).exists(): raise ValueError(f'Missing {name}: {config[name]}')
-    for module in ('frida', 'PIL', 'numpy'):
+        if not isinstance(config.get(name), str) or not config[name].strip():
+            raise ValueError(f'launcher.json needs a nonempty {name} path.')
+        if not Path(config[name]).is_absolute():
+            raise ValueError(f'Use an absolute path for {name} in launcher.json.')
+        valid = Path(config[name]).is_dir() if name == 'lab' else Path(config[name]).is_file()
+        if not valid: raise ValueError(f'Missing {name}: {config[name]}')
+    for module in ('frida', 'PIL', 'numpy', 'capstone'):
         if importlib.util.find_spec(module) is None: raise ValueError(f'Missing Python dependency: {module}')
     lab = Path(config['lab'])
-    marker = json.loads((lab/'ftlvr-lab.json').read_text())
-    hooks = json.loads(Path(config['hooks']).read_text())
+    if not (lab/'ftlvr-lab.json').is_file():
+        raise ValueError('The configured lab has no ftlvr-lab.json marker. Complete isolated lab preparation.')
+    marker = json.loads((lab/'ftlvr-lab.json').read_text(encoding='utf-8-sig'))
+    if not isinstance(marker, dict):
+        raise ValueError('The lab marker is malformed. Use a correctly prepared isolated lab.')
+    source = marker.get('source_game')
+    if not isinstance(source, str) or not (Path(source)/'ftl.dat').is_file():
+        raise ValueError('The owned original installation recorded by the lab is unavailable. Restore that path.')
+    if marker.get('save_prefix') != 'ftlvr':
+        raise ValueError('The normal launcher requires an isolated lab with the ftlvr save prefix.')
+    manifest_path = PROJECT/'local_game_data/manifest.json'
+    if not manifest_path.is_file():
+        raise ValueError('Local game assets are missing. Run tools/extract_ftl.py on your owned original ftl.dat.')
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
+    if not isinstance(manifest, dict) or not all(manifest.get(name) for name in ('ships', 'fonts', 'ui_assets')):
+        raise ValueError('Local extraction is incomplete. Run tools/extract_ftl.py again.')
+    hooks = json.loads(Path(config['hooks']).read_text(encoding='utf-8-sig'))
+    if not isinstance(hooks, dict):
+        raise ValueError('hooks.json must contain resolved local executable hook data.')
     if not all(name in hooks.get('rvas',{}) for name in ('GetShiftState','GetCtrlState','ForceAutofireFlag')):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for controller modifiers')
     if not all(name in hooks.get('rvas',{}) for name in ('OnTextInput','OnTextEvent','TextInputOnRender','TextInputStart')):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for native renaming')
     if not all(name in hooks.get('rvas',{}) for name in ('CommandGuiRenderStatic','CommandGuiRenderPause','TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','StarMapOnRender')):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for live native HUD capture')
-    if not marker.get('activated') or hashlib.sha1((lab/'FTLGame.exe').read_bytes()).hexdigest() != hooks['sha1']:
+    if not marker.get('activated') or not (lab/'FTLGame.exe').is_file() or hashlib.sha1((lab/'FTLGame.exe').read_bytes()).hexdigest() != hooks.get('sha1'):
         raise ValueError('Lab is not activated or its executable fingerprint changed')
     if not (lab/'Hyperspace.dll').exists(): raise ValueError('Hyperspace is missing')
     status = PROJECT/'local_game_data/bridge_status.json'
@@ -56,7 +89,7 @@ def main():
     parser.add_argument('--smoke',action='store_true',help='Desktop launch and graceful exit after 3 seconds')
     args=parser.parse_args()
     if args.smoke: args.desktop=True
-    config=json.loads(args.config.read_text())
+    config=load_config(args.config)
     print(json.dumps(preflight(config,args.desktop),indent=2),flush=True)
     if args.check: return
     local=PROJECT/'local_game_data'; local.mkdir(exist_ok=True)

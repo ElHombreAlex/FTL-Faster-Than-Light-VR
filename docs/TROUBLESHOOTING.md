@@ -6,6 +6,7 @@ Start with `CHECK-SETUP.cmd`, or `CHECK-SETUP.cmd --desktop` if testing without 
 
 | Symptom | What to check |
 |---|---|
+| Double-clicking the launcher does nothing | Failure output now stays open. Read the error above the prompt. Every checkout needs its own `.venv`, `local_game_data/launcher.json` and locally extracted assets; a Git clone contains source only. Complete Installation for that checkout. |
 | `python` opens Microsoft Store, or Python cannot be found | Install Python 3.10+ from python.org with its launcher, reopen your terminal and rerun `SETUP.cmd`. |
 | Missing `frida`, `PIL`, `numpy` or `capstone` | Run `SETUP.cmd` and use the repository's `.venv` Python. Installing into another Python environment will not satisfy the launch wrappers. |
 | Package installation fails | Check the pip output and internet connectivity. Python 3.12 is the development baseline. Setup does not download game dependencies. |
@@ -18,6 +19,8 @@ Start with `CHECK-SETUP.cmd`, or `CHECK-SETUP.cmd --desktop` if testing without 
 | `Hyperspace.ftl`, loader DLL or ftlman error | Verify the full release folder structure and the ftlman executable/version described in Installation. |
 | Resolver reports a missing/ambiguous signature | Use the matching win32/1.6.9 signature directory from Hyperspace source, with all neighboring `.zhl` files. Do not use other people's hook addresses. |
 | Recorded original installation unavailable | The bridge still reads the original `ftl.dat` for newly encountered ships. Restore that location or rebuild the lab/config against the new installation. |
+
+To use a real Python installation outside PATH, set `FTLVR_PYTHON` to its executable before running `SETUP.cmd` (see Installation). These scripts do not use the Microsoft Store alias. Set `FTLVR_NO_PAUSE=1` only when calling the launchers from an automated script that captures their output; otherwise failures remain open so they can be read.
 
 ## Launch and VR
 

@@ -118,8 +118,62 @@ func run() -> void:
 	panel.set_power(source_player)
 	await rendered()
 	check(powered_count.get_data() != panel.viewport.get_texture().get_image().get_region(Rect2i(537,206,50,15)).get_data(),"The visible power count must show native effective 1/1 instead of raw allocated 0/1")
+	var storm_player := source_player.duplicate(true)
+	storm_player.reactor = {"raw_available":4,"available":0,"usable_available":0,"usable_total":8,"total":8,"installed":12,"cap_loss":4,"storm_loss":4,"battery_available":2,"battery_total":2}
+	panel.set_power(storm_player)
+	var reactor_view: Dictionary = panel.reactor_display()
+	check(reactor_view.free == 0 and reactor_view.total == 8 and reactor_view.installed == 12 and reactor_view.storm_loss == 4,"Storm-disabled reactor bars must not be shown as usable free power")
+	check(reactor_view.battery_free == 2 and reactor_view.free == 0,"Battery availability must remain distinct from free reactor bars")
+	await rendered()
+	panel.viewport.get_texture().get_image().save_png("res://local_game_data/controller-system-power-storm.png")
+	panel.set_power(source_player)
 	var wheel: Node3D = load("res://scripts/shortcut_wheel.gd").new()
 	root.add_child(wheel)
+	var equipment_player := {"weapons":[{"slot":0,"name":"LASER_BURST_2","title":"Laser à impulsions II","kind":"laser","charge":1.0},{"slot":1,"name":"MISSILES_1","title":"Artemis","kind":"missile","missile_cost":1}],"drones":[{"slot":-1,"equipment_slot":0,"title":"Combat I","kind":"combat","x":4},{"slot":-1,"title":"Special actor","kind":"hacking"}]}
+	var equipment: Array = wheel.equipment_entries(equipment_player,1)
+	check(equipment.size() == 8 and equipment[0].label == "Laser à impulsions II" and equipment[1].detail == "1 MISSILE","Wheel slots must expose localized equipped names and actual ammo costs")
+	check(equipment[4].label == "Combat I" and equipment[4].key == 53 and not equipment[2].enabled and not equipment[5].enabled,"Equipment slots must preserve native keys and omit special-drone actors/empty slots")
+	var equipment_schema := equipment_player.duplicate(true)
+	equipment_schema.weapons[1].ammo_cost = 2
+	equipment_schema.drone_equipment = [{"slot":0,"title":"Defense II","kind":"defense"}]
+	var native_equipment: Array = wheel.equipment_entries(equipment_schema,1)
+	check(native_equipment[1].detail == "2 MISSILES" and native_equipment[4].label == "Defense II","Authoritative ammo_cost and separate installed-drone metadata must take priority over actor fallbacks")
+	var no_drones := equipment_player.duplicate(true)
+	no_drones.drone_equipment = {}
+	var empty_native_table: Array = wheel.equipment_entries(no_drones,0)
+	check(empty_native_table[0].enabled and empty_native_table[0].label == "Laser à impulsions II" and empty_native_table[1].enabled,"A native empty Lua drone table must not suppress equipped weapons or fail the wheel")
+	check(not empty_native_table[4].enabled and empty_native_table[4].label == "EMPTY","An explicit empty installed-drone table must not fall back to moving special actors")
+	no_drones.weapons = {}
+	no_drones.drone_equipment = null
+	check(not wheel.equipment_entries(no_drones,0)[0].enabled,"Empty or temporarily unavailable native equipment must produce empty slots without a typed-array error")
+	var native_path := "res://local_game_data/live_state.json"
+	var recorded_wheel: Array = []
+	if FileAccess.file_exists(native_path):
+		var native_state: Variant = JSON.parse_string(FileAccess.get_file_as_string(native_path))
+		if native_state is Dictionary and native_state.get("player", {}).get("weapons", []) is Array:
+			var live_weapons: Array = native_state.player.weapons
+			var live_wheel: Array = wheel.equipment_entries(native_state.player,int(native_state.get("drone_slots",0)))
+			recorded_wheel = live_wheel
+			for i in range(mini(4,live_weapons.size())):
+				check(live_wheel[i].enabled and live_wheel[i].label == live_weapons[i].get("title",live_weapons[i].get("name","")),"The recorded native player equipment must appear in the wheel")
+	wheel.set_entries(equipment,"WEAPONS\nDRONES")
+	revision = wheel.content_revision
+	equipment_player.weapons[0].charge = 8.5
+	equipment_player.drones[0].x = 15
+	wheel.set_entries(wheel.equipment_entries(equipment_player,1),"WEAPONS\nDRONES")
+	check(wheel.content_revision == revision,"Changing charge/positions must not redraw unchanged wheel equipment labels")
+	var long_name := "TrèsLongNomSansEspacePourUneArmeModifiée " + "With more translated words to clip"
+	var bounded: Array = wheel.bounded_lines(long_name)
+	check(bounded.size() <= 3 and str(bounded.back()).ends_with("..."),"Long localized equipment names must be clipped to bounded sector lines")
+	for line in bounded: check(load("res://scripts/ftl_ui_theme.gd").text_size(str(line),23).x <= 136.01,"Every wheel name line must fit its measured native-font width")
+	wheel.choose(Vector2(0,1))
+	wheel.visible = true
+	await rendered()
+	wheel.viewport.get_texture().get_image().save_png("res://local_game_data/controller-action-wheel-equipment.png")
+	if not recorded_wheel.is_empty():
+		wheel.set_entries(recorded_wheel,"WEAPONS\nDRONES")
+		await rendered()
+		wheel.viewport.get_texture().get_image().save_png("res://local_game_data/controller-action-wheel-native.png")
 	wheel.set_entries([{"label":"BURST LASER II","enabled":true},{"label":"ARTEMIS","enabled":true},{"label":"EMPTY","enabled":false},{"label":"EMPTY","enabled":false},{"label":"COMBAT DRONE","enabled":true},{"label":"BEAM DRONE","enabled":true}],"WEAPONS\nDRONES")
 	wheel.choose(Vector2(0,1))
 	revision = wheel.content_revision

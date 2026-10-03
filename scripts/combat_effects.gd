@@ -1,9 +1,15 @@
 extends Node3D
 
 const NATIVE_PRESENTATION_GRACE_MS := 300
+const UiAssets = preload("res://scripts/ftl_ui_assets.gd")
+const MISS_CUE_DURATION := 1.0
+const MAX_MISS_CUES := 24
+static var impact_meshes: Dictionary = {}
+static var glow_materials: Dictionary = {}
 
 var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
+var misses: Array[Dictionary] = []
 var simulation_paused := false
 var unit_beam_mesh: CylinderMesh
 
@@ -25,7 +31,7 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 	if outcome == "shield":
 		end = receiver.shield_intercept(start, end)
 	elif outcome == "miss":
-		end += Vector3(0.0, 0.5, 1.0)
+		end = _miss_endpoint(start, end, receiver)
 	var color := Color(0.3, 0.75, 1.0) if kind == "ion" else Color(1.0, 0.35, 0.12)
 	if kind == "missile":
 		color = Color(0.9, 0.9, 0.85)
@@ -48,7 +54,7 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 		"projectile_id": str(event.get("projectile_id", "")), "sender": sender,
 		"created_ms": Time.get_ticks_msec(), "native_present": false,
 		"visual_scale": maxf(0.1, sender.global_basis.get_scale().abs().x),
-		"live_progress": 0.0, "wanted_progress": 0.0, "missed": false,
+		"live_progress": 0.0, "wanted_progress": 0.0, "missed": false, "miss_feedback": false,
 		"end_point": event.get("end_point", {}),
 		"origin_point": event.get("origin_point", {}), "origin_ship": origin_ship,
 		"target_point": event.get("target", {}), "beam_point": {},
@@ -57,6 +63,24 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 
 
 func _process(delta: float) -> void:
+	# Miss labels remain attached to the encounter if the table is moved during
+	# pause; only their presentation lifetime and drift freeze with simulation.
+	for i in range(misses.size() - 1, -1, -1):
+		var cue: Dictionary = misses[i]
+		if not is_instance_valid(cue["receiver"]) or not is_instance_valid(cue["node"]):
+			if is_instance_valid(cue["node"]):
+				cue["node"].queue_free()
+			misses.remove_at(i)
+			continue
+		if not simulation_paused:
+			cue["time"] += delta
+		var age := clampf(float(cue["time"]) / MISS_CUE_DURATION, 0.0, 1.0)
+		var label: Label3D = cue["node"]
+		label.global_position = cue["receiver"].to_global(Vector3(cue["local_point"]) + Vector3.UP * (0.28 + age * 0.12))
+		label.modulate.a = minf(1.0, (1.0 - age) * 3.0)
+		if age >= 1.0:
+			label.queue_free()
+			misses.remove_at(i)
 	if simulation_paused:
 		return
 	for i in range(impacts.size() - 1, -1, -1):
@@ -83,7 +107,7 @@ func _process(delta: float) -> void:
 			if not shot["target_point"].is_empty():
 				shot["end"] = shot["receiver"].to_global(shot["receiver"].pixel_point(shot["target_point"]))
 			if shot["missed"]:
-				shot["end"] += Vector3(0.0, 0.25, 0.5)
+				shot["end"] = _miss_endpoint(shot["start"], shot["end"], shot["receiver"])
 			if not shot["end_point"].is_empty():
 				shot["beam_end"] = shot["receiver"].to_global(shot["receiver"].pixel_point(shot["end_point"]))
 		var progress := clampf(float(shot["time"]) / float(shot["duration"]), 0.0, 1.0)
@@ -119,6 +143,8 @@ func _process(delta: float) -> void:
 				shot["receiver"].flash_shield()
 			if shot["outcome"] not in ["miss", "pending"]:
 				_impact(shot["beam_end"] if shot["kind"] == "beam" else shot["end"], shot["kind"], shot["outcome"] == "shield")
+			elif shot["outcome"] == "miss":
+				_show_shot_miss(shot)
 			node.queue_free()
 			shots.remove_at(i)
 
@@ -130,9 +156,17 @@ func resolve_live(event: Dictionary, receiver: Node3D) -> void:
 		_impact(point, "beam")
 		return
 	var kind := str(event.get("kind", "laser"))
+	var miss_already_shown := false
 	for i in range(shots.size() - 1, -1, -1):
 		if shots[i]["projectile_id"] == projectile_id:
+			if event.get("outcome", "") == "miss":
+				# Evasion is reported at the native collision decision. The shot
+				# may still be flying; native snapshots decide when it disappears.
+				shots[i]["missed"] = true
+				_show_shot_miss(shots[i])
+				return
 			kind = str(shots[i]["kind"])
+			miss_already_shown = bool(shots[i].get("miss_feedback", false))
 			if not event.has("target"):
 				point = shots[i]["end"]
 			if event.get("outcome", "") == "shield":
@@ -143,6 +177,8 @@ func resolve_live(event: Dictionary, receiver: Node3D) -> void:
 		receiver.flash_shield()
 	if event.get("outcome", "") in ["shield", "hull"]:
 		_impact(point, kind, event.get("outcome", "") == "shield")
+	elif event.get("outcome", "") == "miss" and not miss_already_shown:
+		_miss_feedback(point, receiver, projectile_id)
 
 
 func update_live_projectiles(projectiles: Array) -> void:
@@ -157,35 +193,43 @@ func update_live_projectiles(projectiles: Array) -> void:
 			var projectile: Dictionary = present[shot["projectile_id"]]
 			shot["native_present"] = true
 			shot["wanted_progress"] = float(projectile.get("progress", 0))
-			shot["missed"] = bool(projectile.get("missed", false))
+			shot["missed"] = shot["missed"] or bool(projectile.get("missed", false))
+			if shot["missed"]:
+				_show_shot_miss(shot)
 			shot["beam_point"] = projectile.get("beam_point", {})
-		elif shot["native_present"] or Time.get_ticks_msec() - int(shot["created_ms"]) >= NATIVE_PRESENTATION_GRACE_MS:
+		elif shot["native_present"] or shot["missed"] or Time.get_ticks_msec() - int(shot["created_ms"]) >= NATIVE_PRESENTATION_GRACE_MS:
 			# Native absence ends a known projectile immediately. Newly delivered
-			# fire records get a short presentation grace for the next snapshot;
-			# its monotonic clock keeps working while gameplay is paused.
+			# fire records without an outcome get a short snapshot grace. A native
+			# miss followed by absence has already completed its real lifecycle;
+			# the grace clock keeps working while gameplay is paused.
 			shot["node"].queue_free()
 			shots.remove_at(i)
 
 
 func _impact(point: Vector3, kind: String = "laser", shield: bool = false) -> void:
 	var flash := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.025 if kind not in ["missile", "bomb"] else 0.04
-	sphere.height = sphere.radius * 2.0
-	sphere.radial_segments = 10
-	sphere.rings = 5
-	flash.mesh = sphere
+	var sphere_key := "large" if kind in ["missile", "bomb"] else "small"
+	if not impact_meshes.has(sphere_key):
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.04 if sphere_key == "large" else 0.025
+		sphere.height = sphere.radius * 2.0
+		sphere.radial_segments = 10
+		sphere.rings = 5
+		impact_meshes[sphere_key] = sphere
+	flash.mesh = impact_meshes[sphere_key]
 	var color := Color(0.32, 0.73, 1.0) if shield or kind == "ion" else Color(1.0, 0.78, 0.28)
 	flash.material_override = _glow(color)
 	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ring := MeshInstance3D.new()
 	ring.name = "ImpactRing"
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.024
-	torus.outer_radius = 0.028
-	torus.rings = 16
-	torus.ring_segments = 6
-	ring.mesh = torus
+	if not impact_meshes.has("ring"):
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.024
+		torus.outer_radius = 0.028
+		torus.rings = 16
+		torus.ring_segments = 6
+		impact_meshes["ring"] = torus
+	ring.mesh = impact_meshes["ring"]
 	ring.material_override = _glow(Color(color, 0.45), true)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	flash.add_child(ring)
@@ -198,7 +242,56 @@ func _impact(point: Vector3, kind: String = "laser", shield: bool = false) -> vo
 			flash.add_child(spark)
 	add_child(flash)
 	flash.global_position = point
-	impacts.append({"node": flash, "time": 0.0})
+	impacts.append({"node": flash, "time": 0.0, "outcome": "shield" if shield else "hull", "kind": kind})
+
+
+func _miss_endpoint(start: Vector3, target: Vector3, receiver: Node3D) -> Vector3:
+	var direction := (target - start).normalized()
+	var up := receiver.global_basis.y.normalized()
+	var tangent := direction.cross(up).normalized()
+	var scale := maxf(0.1, receiver.global_basis.get_scale().abs().x)
+	# This is an outcome illustration, never collision detection. The native
+	# evasion flag allows a clear passing trajectory without creating a hit.
+	return target + (tangent * 0.30 + up * 0.22 + direction * 1.1) * scale
+
+
+func _show_shot_miss(shot: Dictionary) -> void:
+	if shot["miss_feedback"]:
+		return
+	shot["miss_feedback"] = true
+	var receiver: Node3D = shot["receiver"]
+	var point: Vector3 = receiver.room_target(shot["room"])
+	if not shot["target_point"].is_empty():
+		point = receiver.to_global(receiver.pixel_point(shot["target_point"]))
+	_miss_feedback(point, receiver, shot["projectile_id"])
+
+
+func _miss_feedback(point: Vector3, receiver: Node3D, projectile_id: String) -> void:
+	# An impact record and its 10 Hz missed flag can arrive in either order.
+	# Keep one cue per native projectile while the short feedback is visible.
+	for cue in misses:
+		if not projectile_id.is_empty() and cue["projectile_id"] == projectile_id:
+			return
+	if misses.size() >= MAX_MISS_CUES:
+		misses[0]["node"].queue_free()
+		misses.pop_front()
+	var label := Label3D.new()
+	label.name = "NativeMiss"
+	label.text = "MISS"
+	label.font = UiAssets.font("body")
+	label.font_size = 50
+	label.pixel_size = 0.0028 * maxf(0.1, receiver.global_basis.get_scale().abs().x)
+	label.modulate = Color("fff2c4")
+	label.outline_modulate = Color("1b2532")
+	label.outline_size = 7
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	label.no_depth_test = false
+	add_child(label)
+	var local_point: Vector3 = receiver.to_local(point)
+	label.global_position = receiver.to_global(local_point + Vector3.UP * 0.28)
+	misses.append({"node": label, "receiver": receiver, "local_point": local_point,
+		"time": 0.0, "projectile_id": projectile_id})
 
 
 func _projectile_visual(kind: String, color: Color) -> MeshInstance3D:
@@ -293,6 +386,9 @@ func _box(size: Vector3, color: Color, luminous: bool = true) -> MeshInstance3D:
 
 
 func _glow(color: Color, additive: bool = false) -> StandardMaterial3D:
+	var key := color.to_html() + ":" + str(additive)
+	if glow_materials.has(key):
+		return glow_materials[key]
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = color
@@ -301,6 +397,7 @@ func _glow(color: Color, additive: bool = false) -> StandardMaterial3D:
 	if additive:
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	glow_materials[key] = material
 	return material
 
 

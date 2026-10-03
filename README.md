@@ -11,11 +11,11 @@ An experimental OpenXR mod for **FTL: Faster Than Light**. Walk around a miniatu
 ## What it does
 
 - Floating player and enemy ships with opposing bows, room interiors, visible shields and movable encounter placement.
-- Original headset-following HUD, with a compact controller screen for navigation, Tactical, shortcuts, system power and illustrated Help.
+- Compact original HUD following the headset, with clearance above the ship when needed; upper status and crew roster, controller navigation, Tactical, shortcuts, system power and illustrated Help.
 - Crew selection and drag-to-room orders, door controls, weapon/beam targeting and native system targeting.
 - Contextual Jump/Ship/Store actions, a cockpit-anchored sector map, floating event dialogs and complete native shop/ship panels.
-- An eight-slot action wheel, Shift/Ctrl shortcuts and a QWERTY VR keyboard for renaming crew and ships.
-- Original procedural voxel crew, weapons and drones, weapon charge indicators, room fire and breach effects.
+- An eight-slot action wheel with localized equipped names, family/ammo hints, Shift/Ctrl shortcuts and a QWERTY VR keyboard for renaming crew and ships.
+- Original procedural voxel crew, weapons and drones, weapon charge indicators, room-condition feedback, cross-shaped breaches and native miss cues.
 - Surrounding stars and native-state-driven asteroid, sun, nebula/storm and pulsar environments.
 - A separate game copy and VR save prefix, plus a backup before each normal launch.
 
@@ -66,11 +66,11 @@ The [controls guide](docs/CONTROLS.md) explains crew movement, room targeting, t
 
 ## Current state
 
-The maintainer has played substantial portions of runs on Steam Frame and confirmed that earlier revisions are playable. The latest revision improves Tactical delivery, native-font menus, crew orientation, doors, drones, the enemy hull bar and map placement.
+The maintainer has played substantial portions of runs on Steam Frame and confirmed that earlier revisions are playable. The compact gameplay HUD now follows the headset first and stops above the ship only when it would intersect the hull or shield. Equipped weapon entries remain available on the wheel when no drones are installed. Room floors retain role icons and condition colors; health/status bars and counters are removed. System Power, storm-aware free power, native miss feedback and cross-shaped breaches remain available.
 
 Core game input, capture, native state and graceful launch/exit have been verified in an isolated game. **Complete campaign coverage and measured stereo headset performance remain open.** Hacking target acceptance is verified; drone attachment/effect completion still needs encounter testing. The renderer presents hazards and some effects approximately while the original game remains authoritative.
 
-Latest recorded checks: **27 Python tests and seven Godot suites passed**. Tactical delivery reached about **28–29 updates/second in desktop scene checks**; this is texture delivery, not headset FPS. A clean installation on a different machine has not yet been tested. See [STATUS.md](docs/STATUS.md) for the full distinction between implemented, checked and still to test.
+The **current source** passed 38 Python tests and nine Godot suites in the prepared source folder. Desktop and VR wrappers passed combined launch/exit in desktop smoke mode, including the GitHub Desktop checkout's FTL-VR alias, with clean client logs and no bridge errors; a separate copied campaign also verified native weapon entries in the rendered wheel. VR preflight passed, while physical Steam Frame comfort and stereo performance remain unmeasured for these changes. Campaign hashes and game executable fingerprints were preserved. Historical Tactical delivery reached about **28–29 updates/second in desktop scene checks**; this is texture delivery, not headset FPS. A clean installation on a different machine has not yet been tested. See [STATUS.md](docs/STATUS.md) for details.
 
 ## Repository layout
 

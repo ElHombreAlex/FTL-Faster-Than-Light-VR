@@ -102,7 +102,10 @@ func run() -> void:
 	check(scene.map_surface.ray_pixel(scene.map_surface.to_global(Vector3(0,0,1)), -scene.map_surface.global_basis.z) != null,"World jump map must stay usable when hand tracking is hidden")
 	var map: OpenXRActionMap = load("res://openxr_action_map.tres")
 	check(map.find_interaction_profile("/interaction_profiles/valve/frame_controller_valve") != null,"Explicit Frame profile must ship with the client")
-	check(is_equal_approx(scene.nav_panel.scale.x, 0.6) and is_equal_approx(scene.hud_surface.scale.x, 0.64) and scene.hud_surface.position.y < -0.1,"HUD must be lower and narrower while retaining the hand panel size")
+	scene.hud_state = {"ready":true,"ui_mode":"game"}
+	scene._sync_hud_layout()
+	scene._position_hud(0.0, true)
+	check(is_equal_approx(scene.nav_panel.scale.x, 0.6) and scene.hud_surface.get_parent()==scene and scene.hud_surface.source_rect==scene.GAMEPLAY_HUD_RECT,"Gameplay HUD must retain native upper/crew pixels, exclude the bottom strip and use independent world placement")
 	check(scene.hud_surface.render_order == 100 and scene.panel_theme.get_child(1).material_override.render_priority > scene.pause_label.render_priority and scene.tracking_label.render_priority < 120,"Hand screen must render over all HUD layers, including pause and modifier labels")
 	check(scene.help_label.get_script().resource_path.ends_with("controller_help.gd"),"Help must use a controller infographic instead of plain text")
 	check(scene.hover_marker.mesh.radius <= 0.003 and scene.right_laser.mesh.top_radius <= 0.001,"Pointer endpoint must support precise native UI selection")
@@ -110,8 +113,10 @@ func run() -> void:
 	scene._face_front(scene.wheel)
 	var to_head: Vector3 = (scene.camera.get_camera_transform().origin-scene.wheel.global_position).normalized()
 	check(scene.wheel.global_basis.z.dot(to_head) > 0.999 and scene.wheel.global_basis.z.y > 0,"Wheel face must tilt up toward the real viewer rather than the ground")
-	scene.hud_state = {"ready":true,"ui_mode":"game","navigation":{"jump":true},"player":{"weapons":[{}],"systems":{"shields":true}},"drone_slots":1}
+	scene.hud_state = {"ready":true,"ui_mode":"game","navigation":{"jump":true},"player":{"weapons":[{"slot":0,"name":"LASER_BURST_1"}],"systems":{"shields":true}},"drone_slots":1}
 	scene.nav_page = "navigation"
+	scene._refresh_navigation()
+	check(scene._navigation_entries().has(["SYSTEM POWER", "page:power"]),"System Power must have a direct Navigation entry")
 	scene._cycle_hand_page(1)
 	check(scene.nav_page == "tactical" and scene.commands.back().data.screen == "tactical","Dpad right must cycle into tactical")
 	scene.hud_state.tactical = true
@@ -133,6 +138,26 @@ func run() -> void:
 	var command_count: int = scene.commands.size()
 	scene._commit_wheel()
 	check(scene.commands.back().action == "event_choice" and scene.commands.size() == command_count,"Event wheel must commit once")
+	var saved_state: Dictionary = scene.hud_state.duplicate(true)
+	scene.hud_state = {"ready":true,"ui_mode":"game"}
+	scene.pending_page = ""
+	scene.nav_page = "navigation"
+	scene._toggle_power_page()
+	check(scene.nav_page=="power","Dpad Up action must open System Power")
+	scene._toggle_power_page()
+	check(scene.nav_page=="navigation","Dpad Up action must close System Power")
+	scene.hud_state.ui_mode = "menu"
+	scene._toggle_power_page()
+	check(scene.nav_page=="navigation","Dpad Up must not open unusable Power controls in a main menu")
+	scene.hud_state = {"ready":true,"ui_mode":"screen","map_open":true}
+	scene.wheel_committed = false
+	scene.wheel.visible = true
+	scene.wheel.set_entries([{"key":49,"enabled":true}],"WEAPONS")
+	scene.wheel.selected = 0
+	command_count = scene.commands.size()
+	scene._commit_wheel()
+	check(scene.commands.size()==command_count and not scene.wheel.visible,"Opening a native map must cancel equipment wheel commits")
+	scene.hud_state = saved_state
 	scene.event_surface.visible = true
 	scene.event_surface.canvas.frame_image = image
 	scene.event_surface.source_rect = Rect2(313,138,650,390)
@@ -160,6 +185,13 @@ func run() -> void:
 	scene._select_from_ray(Vector3(0,0,1),Vector3.FORWARD)
 	check(scene.held_surface == null,"Blank hand panel pixels must block clicks into the HUD behind them")
 	scene.nav_panel.visible = false
+	scene.nav_page = "power"
+	scene.hud_state = {"ready":true,"ui_mode":"screen","panel_open":true,"blocking_ui":true}
+	scene.last_hover_time = -1.0
+	command_count = scene.commands.size()
+	scene._hover_ui(Vector3(0,0,1),Vector3.FORWARD)
+	check(scene.commands.size()==command_count+1 and scene.commands.back().action=="ui_move","Native window hover must remain available while System Power is selected")
+	scene.nav_page = "navigation"
 	var window_image := Image.create(1280,720,false,Image.FORMAT_RGBA8)
 	var body_image := Image.create(650,520,false,Image.FORMAT_RGBA8)
 	body_image.fill(Color.WHITE)

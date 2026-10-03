@@ -26,7 +26,7 @@ func _run() -> void:
 	effects.set_process(false)
 	_check(player.global_basis.x.normalized().dot(Vector3.RIGHT) > 0.99, "Player bow must face enemy")
 	_check((-enemy.global_basis.z).normalized().dot(Vector3.LEFT) > 0.99, "Enemy bow must face player")
-	_check(scene.hud_surface.get_parent() == scene.camera, "HUD must follow the tracked headset")
+	_check(scene.hud_surface.get_parent() == scene, "Gameplay HUD must support spatial placement without inheriting head motion")
 	for ship in [player, enemy]:
 		_check(ship.weapon_origin(0).is_equal_approx(ship.to_global(ship.mount_points[0])), "Mount must use the ship world transform")
 		_check(ship.room_target(0).is_equal_approx(ship.to_global(ship.room_points[0])), "Target room must use the ship world transform")
@@ -95,11 +95,45 @@ func _run() -> void:
 	effects._process(0.3)
 	scene._present_shot({"source": "player", "kind": "laser", "outcome": "pending", "projectile_id": "live-miss", "target_room": 0})
 	effects.update_live_projectiles([{"id": "live-miss", "progress": 0.7, "missed": true}])
+	var miss_count: int = effects.misses.size()
+	_check(miss_count > 0 and effects.misses.back()["node"].text == "MISS", "A native evasion must visibly say MISS without an impact")
+	effects.update_live_projectiles([{"id": "live-miss", "progress": 0.7, "missed": true}])
+	effects.resolve_live({"projectile_id": "live-miss", "outcome": "miss", "target": {"x": 80, "y": 170}}, enemy)
+	_check(effects.misses.size() == miss_count and effects.shots.size() == 1, "Miss snapshots and native outcomes must produce one cue and preserve a still-live passing projectile")
 	effects._process(0.1)
 	_check(Vector3(effects.shots.back()["end"]).distance_to(enemy.room_target(0)) > 0.4, "Native miss trajectory must survive endpoint updates")
+	_check(effects.impacts.is_empty() and enemy.shield_flash > 0.0, "A miss must not add a hull impact or reset an existing shield state")
+	effects.simulation_paused = true
+	var miss_age: float = effects.misses.back()["time"]
+	effects._process(0.5)
+	_check(effects.misses.back()["time"] == miss_age, "Native pause must freeze evasion feedback")
+	effects.simulation_paused = false
 	effects.update_live_projectiles([])
 	effects._process(0.3)
 	effects.update_live_projectiles([])
+	effects._process(1.1)
+	_check(effects.misses.is_empty(), "Evasion feedback must clear after its short presentation lifetime")
+	effects.resolve_live({"projectile_id": "already-dead-miss", "outcome": "miss", "target": {"x": 80, "y": 170}}, enemy)
+	_check(effects.misses.size() == 1 and effects.impacts.is_empty(), "Native misses that vanish between snapshots must still display feedback without invented damage")
+	effects.resolve_live({"projectile_id": "actual-hull", "outcome": "hull", "target": {"x": 80, "y": 170}}, enemy)
+	effects.resolve_live({"projectile_id": "actual-shield", "outcome": "shield", "target": {"x": 80, "y": 170}}, enemy)
+	_check(effects.impacts[-2]["outcome"] == "hull" and effects.impacts[-1]["outcome"] == "shield", "Hull and shield feedback must retain distinct actual native outcomes")
+	_check(effects.impacts[-2]["node"].material_override.albedo_color != effects.impacts[-1]["node"].material_override.albedo_color, "Hull and shield flashes must use visibly different colors")
+	effects._process(1.1)
+	# A projectile can fire, miss, and die between native snapshots. Its real
+	# outcome must end the unseen flight immediately, even while paused.
+	effects.simulation_paused = true
+	effects.spawn_shot({"kind": "laser", "outcome": "pending", "projectile_id": "gap-miss"}, player, enemy)
+	effects.resolve_live({"projectile_id": "gap-miss", "outcome": "miss", "target": {"x": 80, "y": 170}}, enemy)
+	effects.update_live_projectiles([])
+	_check(effects.shots.is_empty() and effects.misses.size() == 1 and effects.impacts.is_empty(), "Native missed fire absent from its first snapshot must clear immediately with one MISS cue and no invented hit")
+	effects.spawn_shot({"kind": "laser", "outcome": "pending", "projectile_id": "fresh-live-miss"}, player, enemy)
+	effects.resolve_live({"projectile_id": "fresh-live-miss", "outcome": "miss", "target": {"x": 80, "y": 170}}, enemy)
+	effects.update_live_projectiles([{"id": "fresh-live-miss", "progress": 0.75, "missed": true}])
+	_check(effects.shots.size() == 1 and effects.shots[0]["projectile_id"] == "fresh-live-miss", "A native miss before its first snapshot must preserve the projectile when the same snapshot still reports it alive")
+	effects.update_live_projectiles([])
+	effects.simulation_paused = false
+	effects._process(1.1)
 	scene._present_shot({"source": "player", "kind": "beam", "outcome": "pending", "projectile_id": "live-beam", "target_room": 0, "end_point": {"x": 100, "y": 180}})
 	var beam_point := {"x": 80, "y": 170}
 	effects.update_live_projectiles([{"id": "live-beam", "progress": 0.65, "beam_point": beam_point}])
