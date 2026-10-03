@@ -29,13 +29,13 @@ After installing the documented Python requirements, run from the repository roo
 python -m unittest discover -s tools -p "test_*.py"
 ```
 
-The current prepared source passed **38 Python tests**, including empty native drone-list and portable-launcher regressions. The tests exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering, raw frame publication and launcher preflight/error handling. They do not launch FTL. Temporary fixture files are created by the tests. Godot suites and focused native checks are recorded in [STATUS](STATUS.md); physical headset coverage remains separate.
+The current source passed **40 Python tests**, including empty native drone-list, portable-launcher and modal-HUD hook/preflight regressions. The tests exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering, raw frame publication and launcher preflight/error handling. They do not launch FTL. Temporary fixture files are created by the tests. Godot suites and focused native checks are recorded in [STATUS](STATUS.md); physical headset coverage remains separate.
 
 ## Godot checks
 
 Use a **separate development checkout or disposable local-data folder** with the required extracted assets. Some suites write screenshots/test frames under `local_game_data/`; do not run them over an active production bridge or package those outputs. Create the local output folder before graphical suites if it is missing.
 
-The nine suites below passed for the current prepared source in the configured development environment, including the latest HUD/wheel/bar corrections. See [STATUS](STATUS.md) for evidence and limits. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete.
+The nine suites below passed for the preceding HUD/wheel/bar revision in the configured development environment. The latest clearance/menu correction reran focused Vulkan HUD-layout and input checks, plus native before/after capture checks. See [STATUS](STATUS.md) for evidence and limits. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete.
 
 ```powershell
 godot --headless --xr-mode off --path . --script tools/test_combat.gd -- --demo

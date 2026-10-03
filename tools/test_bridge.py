@@ -56,6 +56,13 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(full_screen_capture({'ready':True,'ui_mode':'menu'}))
         self.assertFalse(full_screen_capture(dict(base,panel_open=True,panel_kind='shop')))
 
+    def test_in_run_modal_window_never_duplicates_on_full_headset_screen(self):
+        for kind in ('ship', 'window', 'options', 'sell'):
+            with self.subTest(kind=kind):
+                self.assertFalse(full_screen_capture({'ready':True,'ui_mode':'menu',
+                                                     'panel_open':True,'panel_kind':kind}))
+        self.assertTrue(full_screen_capture({'ready':False,'ui_mode':'menu','panel_open':True}))
+
     def test_enemy_frame_removed_without_touching_player_widgets(self):
         pixels=np.full((720,1280,4),255,dtype=np.uint8)
         result=remove_enemy_hud(pixels)

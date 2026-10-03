@@ -36,7 +36,7 @@ class LaunchSetupTests(unittest.TestCase):
         names = ("GetShiftState", "GetCtrlState", "ForceAutofireFlag", "OnTextInput",
                  "OnTextEvent", "TextInputOnRender", "TextInputStart", "CommandGuiRenderStatic",
                  "CommandGuiRenderPause", "TabbedWindowOnRender", "ChoiceBoxOnRender",
-                 "MouseControlOnRender", "StarMapOnRender")
+                 "MouseControlOnRender", "StarMapOnRender", "MenuScreenOnRender", "OptionsScreenOnRender")
         self.hooks = self.lab / "hooks.json"
         self.hooks.write_text(json.dumps({"rvas": dict.fromkeys(names, 1),
                                          "sha1": hashlib.sha1((self.lab / "FTLGame.exe").read_bytes()).hexdigest()}))
@@ -62,6 +62,15 @@ class LaunchSetupTests(unittest.TestCase):
 
     def test_shared_preflight_accepts_complete_desktop_setup(self):
         self.assertEqual(launch.preflight(self.config, desktop=True)["mode"], "desktop")
+
+    def test_old_hooks_require_modal_hud_capture_update(self):
+        value = json.loads(self.hooks.read_text())
+        for name in ("MenuScreenOnRender", "OptionsScreenOnRender"):
+            with self.subTest(name=name):
+                incomplete = dict(value, rvas={key: address for key, address in value["rvas"].items() if key != name})
+                self.hooks.write_text(json.dumps(incomplete))
+                with self.assertRaisesRegex(ValueError, "Regenerate lab hooks.json.*live native HUD capture"):
+                    launch.preflight(self.config, desktop=True)
 
     def test_missing_configuration_explains_setup(self):
         with self.assertRaisesRegex(ValueError, "Run SETUP.cmd"):

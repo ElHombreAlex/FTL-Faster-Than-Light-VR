@@ -250,7 +250,11 @@ func _create_hud() -> void:
 
 
 func _gameplay_hud_mode() -> bool:
-	if not bool(hud_state.get("ready", demo_mode)) or str(hud_state.get("ui_mode", "")) == "menu":
+	if not bool(hud_state.get("ready", demo_mode)):
+		return false
+	# In-run native windows have a separate world surface. A simultaneous
+	# native menu flag must not expand the HUD into a second copy of that window.
+	if str(hud_state.get("ui_mode", "")) == "menu" and not bool(hud_state.get("panel_open", false)):
 		return false
 	# Desktop preview still needs the complete screen for its Tactical/map view;
 	# in VR those views have their own hand/world surfaces with native coordinates.

@@ -61,7 +61,7 @@ def preflight(config, desktop=False):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for controller modifiers')
     if not all(name in hooks.get('rvas',{}) for name in ('OnTextInput','OnTextEvent','TextInputOnRender','TextInputStart')):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for native renaming')
-    if not all(name in hooks.get('rvas',{}) for name in ('CommandGuiRenderStatic','CommandGuiRenderPause','TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','StarMapOnRender')):
+    if not all(name in hooks.get('rvas',{}) for name in ('CommandGuiRenderStatic','CommandGuiRenderPause','TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','StarMapOnRender','MenuScreenOnRender','OptionsScreenOnRender')):
         raise ValueError('Regenerate lab hooks.json with tools/resolve_hooks.py for live native HUD capture')
     if not marker.get('activated') or not (lab/'FTLGame.exe').is_file() or hashlib.sha1((lab/'FTLGame.exe').read_bytes()).hexdigest() != hooks.get('sha1'):
         raise ValueError('Lab is not activated or its executable fingerprint changed')

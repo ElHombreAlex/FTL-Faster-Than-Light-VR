@@ -60,6 +60,10 @@ func run() -> void:
 	scene._position_hud(0.0, true)
 	check(scene.hud_anchor.blocked and scene.hud_anchor.lift > 0, "Looking down toward the ship must engage the HUD height stop")
 	_check_clearance(scene, "Looking down must not tunnel the HUD through the ship")
+	var stopped_ship: AABB = Anchor.transformed_bounds(scene._player_hud_local_bounds(), scene.player_ship.global_transform)
+	var stopped_panel: AABB = Anchor.panel_bounds(scene.hud_surface.global_transform, scene.hud_surface.surface_size)
+	var gap: float = stopped_panel.position.y - stopped_ship.end.y
+	check(gap >= .08 and gap < .10, "The blocked HUD must sit within ten centimetres of the ship while leaving a safe gap")
 	var clearance_lift: float = scene.hud_anchor.lift
 	scene.camera.rotation.y = PI
 	scene._position_hud(1.0 / 90)

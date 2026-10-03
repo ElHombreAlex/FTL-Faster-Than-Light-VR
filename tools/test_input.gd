@@ -107,6 +107,15 @@ func run() -> void:
 	scene._position_hud(0.0, true)
 	check(is_equal_approx(scene.nav_panel.scale.x, 0.6) and scene.hud_surface.get_parent()==scene and scene.hud_surface.source_rect==scene.GAMEPLAY_HUD_RECT,"Gameplay HUD must retain native upper/crew pixels, exclude the bottom strip and use independent world placement")
 	check(scene.hud_surface.render_order == 100 and scene.panel_theme.get_child(1).material_override.render_priority > scene.pause_label.render_priority and scene.tracking_label.render_priority < 120,"Hand screen must render over all HUD layers, including pause and modifier labels")
+	var hud_mode_state: Dictionary = scene.hud_state.duplicate(true)
+	scene.hud_state = {"ready":true,"ui_mode":"menu","panel_open":true}
+	scene._sync_hud_layout()
+	check(scene.gameplay_hud and scene.hud_surface.source_rect == scene.GAMEPLAY_HUD_RECT,"An in-run world window must not promote the headset HUD into a second full menu")
+	scene.hud_state = {"ready":false,"ui_mode":"menu","panel_open":true}
+	scene._sync_hud_layout()
+	check(not scene.gameplay_hud and scene.hud_surface.source_rect == Rect2(0,0,1280,720),"Initial and hangar menus must keep their full headset display")
+	scene.hud_state = hud_mode_state
+	scene._sync_hud_layout()
 	check(scene.help_label.get_script().resource_path.ends_with("controller_help.gd"),"Help must use a controller infographic instead of plain text")
 	check(scene.hover_marker.mesh.radius <= 0.003 and scene.right_laser.mesh.top_radius <= 0.001,"Pointer endpoint must support precise native UI selection")
 	scene.wheel.global_position = scene.camera.get_camera_transform().origin + Vector3(0.3,-0.5,-0.4)

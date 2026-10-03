@@ -10,9 +10,9 @@ This is a playable experimental client connected to the real game. It is suitabl
 | --- | --- |
 | Campaign | FTL runs its normal campaign, events, difficulty, combat rules, audio and saves |
 | Ships | Dynamic local layouts, extruded hull presentation, rooms, weapon mounts, opposing bows in combat and stable movable encounter placement |
-| HUD | Compact original status/crew panel follows the headset first at a fixed readable size; lower strip removed; clamps above the transformed hull/shield only when its movement would intersect the ship; full main menus remain head-relative |
+| HUD | Compact original status/crew panel follows the headset first at a fixed readable size; lower strip removed; clamps 8 cm above the transformed hull/shield only when its movement would intersect the ship; full main menus remain head-relative |
 | Navigation | Available actions only; actual sector map appears above/ahead of the pilot room and faces the viewer |
-| Menus/dialogs | Main menus remain 2D; native shop/ship windows and event choices float in the encounter; BUY/SELL panels are retained |
+| Menus/dialogs | Main menus remain 2D; in-run native shop/ship, pause-menu and Options windows appear only above the ship; event choices float in the encounter; BUY/SELL panels are retained |
 | Crew | Native positions/tasks/selection, animated procedural race models, grab preview and native move orders; occupied crew face the viewer |
 | Targeting | Weapon and beam room targeting, plus native mind-control, teleporter and hacking target routing |
 | Systems | Dpad Up and a Navigation button open System Power; native capped reactor availability, storm loss and battery availability remain separate |
@@ -26,11 +26,21 @@ This is a playable experimental client connected to the real game. It is suitabl
 
 ## Verification recorded during development
 
-### Latest HUD, wheel and launch corrections
+### Latest HUD clearance and menu correction
+
+HUD collision clearance is **8 cm**, reduced by 6 cm while preserving headset-following priority and the ship/shield intersection guard. Separate native pause-menu and Options draw methods are suppressed only during the supplemental HUD pass; the original capture still supplies their complete floating panels. In-run panel ownership also takes priority over a simultaneous native menu flag. Initial and hangar menus keep their full headset screen.
+
+The current source passed **40 Python tests** and focused **Vulkan HUD-layout/input checks** on the RTX 4060 Ti. Native before/after captures from a separate QA profile verified Ship, pause-menu and Options panels: duplicate HUD pixels were absent after the fix and world-panel content was retained. These are desktop/native capture checks; physical Steam Frame comfort and stereo performance still need the maintainer's playtest.
+
+The updated prepared folder passed `RUN-VR.cmd --smoke`, and the GitHub Desktop checkout passed `RUN-FTL-VR.cmd --smoke`: Vulkan desktop rendering, clean client logs, no bridge errors and disconnected bridges after graceful exit. Both folders passed `CHECK-SETUP.cmd`; VR launch `--check` passed separately. Production archive/settings were restored, hooks refreshed and all four campaign hashes verified again after both launches. Private QA fixtures are absent. The matching 120-file source package passed publication checks with no failures or warnings. These checks do not exercise the physical headset.
+
+Existing installations must rerun [Installation step 4](INSTALLATION.md#4-resolve-the-local-executable-hooks), which now also resolves neighboring `MenuScreen.zhl` and `OptionsScreen.zhl` signatures. The launcher rejects older hook files before starting the game.
+
+### Preceding HUD, wheel and launch corrections
 
 The gameplay HUD uses a headset-relative pose whenever it has room. Collision checks include the transformed hull/shield envelope and the panel's swept movement, so looking down cannot carry it through the ship. The wheel now handles empty native drone lists without losing equipped weapon entries. Room-floor bars and counters are removed. Launcher corrections expose failures and keep runtime files local.
 
-The current source passed **38 Python tests and nine Godot suites** in the prepared `FTL-Tabletop-VR` folder. The suites include native empty-drone-list normalization, defensive wheel parsing, headset-relative HUD placement/collision checks and removal of room-floor bars. UI, controller and frame-transport suites used actual GPU rendering on the RTX 4060 Ti.
+That revision passed **38 Python tests and nine Godot suites** in the prepared `FTL-Tabletop-VR` folder. The suites include native empty-drone-list normalization, defensive wheel parsing, headset-relative HUD placement/collision checks and removal of room-floor bars. UI, controller and frame-transport suites used actual GPU rendering on the RTX 4060 Ti.
 
 Actual `RUN-DESKTOP.cmd --smoke` and `RUN-VR.cmd --smoke` launched the isolated FTL process and Godot client, then exited successfully with clean client logs and no bridge errors. The GitHub Desktop checkout's `RUN-FTL-VR.cmd --smoke` alias passed the same combined launch/exit check. These smoke tests use desktop rendering; VR preflight passed separately. A copied save profile opened the current campaign, paused it and supplied actual Artemis Missiles and Burst Laser Mark II entries to a GPU-rendered wheel check; the drone-equipment collection was normalized to a list and bridge errors remained empty.
 
@@ -56,7 +66,7 @@ Production combined Vulkan launch/save/exit smoke passed: exit 0, clean client l
 | Hacking | Enemy room targeting accepted; attachment/effect completion remains unverified |
 | UI | Native HUD during Tactical/map/store/event/ship modes; enemy-region transparency; BUY/SELL content; rename input and original fonts checked across development revisions |
 | Drones | Native equipment/special/global lists deduplicated; actual combat and interior battle-drone state inspected |
-| Automated tests | Current prepared source passed 38 Python tests and nine Godot suites; UI/controller/transport checks used actual GPU rendering |
+| Automated tests | Current source passed 40 Python tests and focused Vulkan HUD/input checks; the preceding revision passed nine Godot suites with GPU UI/controller/transport checks |
 | Desktop graphics | Vulkan rendering and model/UI inspection checked on RTX 4060 Ti 8 GB |
 | Save handling | Current desktop-wrapper launch/exit and copied-profile native checks preserved all four original campaign hashes |
 | Steam Frame play | Maintainer confirmed playability and substantial partial runs; latest changes need further hardware coverage |

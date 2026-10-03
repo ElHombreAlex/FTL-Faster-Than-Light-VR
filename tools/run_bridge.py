@@ -129,7 +129,9 @@ def room_pixel(state, ship, room_id):
 
 def full_screen_capture(state):
     # Native shops, upgrades, crew and equipment are world panels, never HUDs.
-    return not state.get('ready') or state.get('ui_mode','menu') == 'menu'
+    # An in-run window owns its pixels even if the native menu flag also sets
+    # ui_mode to menu. Initial/hangar screens keep their full headset view.
+    return not state.get('ready') or (state.get('ui_mode','menu') == 'menu' and not state.get('panel_open'))
 
 
 def world_gameplay_available(state):

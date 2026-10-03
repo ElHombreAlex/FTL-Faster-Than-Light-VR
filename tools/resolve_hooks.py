@@ -79,7 +79,8 @@ def resolve(executable: Path, signatures: Path) -> dict:
     # render advances ship, jump or projectile animations.
     for class_name,method_names in {'CommandGui':('RenderStatic','RenderPause'),
                                    'TabbedWindow':('OnRender',),'ChoiceBox':('OnRender',),
-                                   'MouseControl':('OnRender',),'StarMap':('OnRender',)}.items():
+                                   'MouseControl':('OnRender',),'StarMap':('OnRender',),
+                                   'MenuScreen':('OnRender',),'OptionsScreen':('OnRender',)}.items():
         source=(signatures.parent/(class_name+'.zhl')).read_text()
         for signature,name in re.findall(r'"([.0-9a-fA-F?]+)":[^\n]*\n[^\n]*'+class_name+r'::(\w+)\(',source):
             if name not in method_names: continue

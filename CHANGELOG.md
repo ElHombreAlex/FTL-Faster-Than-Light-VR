@@ -1,5 +1,13 @@
 # Changelog
 
+## HUD clearance and menu correction — source update, 2026-10-03
+
+- Reduce the HUD's collision clearance above the ship/shield from 14 cm to 8 cm. Headset-following priority is unchanged.
+- Show native in-run Ship, pause-menu and Options windows only on their floating world panel, preserving the status/crew HUD. Initial and hangar menus remain head-relative.
+- Resolve and require `MenuScreenOnRender` and `OptionsScreenOnRender` hooks to isolate native menus from the supplemental HUD capture. Existing installations must rerun [hook resolution](docs/INSTALLATION.md#4-resolve-the-local-executable-hooks).
+
+Verification: 40 Python tests, focused Vulkan HUD/input checks and native before/after captures passed. The duplicate pause-menu/Options pixels disappeared from the HUD; complete world-panel captures remained unchanged. Physical headset comfort and stereo performance still need the maintainer's playtest.
+
 ## HUD, wheel and launch corrections — source update, 2026-10-03
 
 - Gameplay HUD follows the headset at a fixed readable size. It clamps above the transformed hull/shield only when its movement would intersect the ship; full menus remain head-relative.

@@ -11,9 +11,9 @@ An experimental OpenXR mod for **FTL: Faster Than Light**. Walk around a miniatu
 ## What it does
 
 - Floating player and enemy ships with opposing bows, room interiors, visible shields and movable encounter placement.
-- Compact original HUD following the headset, with clearance above the ship when needed; upper status and crew roster, controller navigation, Tactical, shortcuts, system power and illustrated Help.
+- Compact original HUD following the headset, with 8 cm clearance above the ship when needed; upper status and crew roster, controller navigation, Tactical, shortcuts, system power and illustrated Help.
 - Crew selection and drag-to-room orders, door controls, weapon/beam targeting and native system targeting.
-- Contextual Jump/Ship/Store actions, a cockpit-anchored sector map, floating event dialogs and complete native shop/ship panels.
+- Contextual Jump/Ship/Store actions, a cockpit-anchored sector map, floating event dialogs and complete native shop/ship/Options panels displayed only above the ship during a run.
 - An eight-slot action wheel with localized equipped names, family/ammo hints, Shift/Ctrl shortcuts and a QWERTY VR keyboard for renaming crew and ships.
 - Original procedural voxel crew, weapons and drones, weapon charge indicators, room-condition feedback, cross-shaped breaches and native miss cues.
 - Surrounding stars and native-state-driven asteroid, sun, nebula/storm and pulsar environments.
@@ -66,11 +66,13 @@ The [controls guide](docs/CONTROLS.md) explains crew movement, room targeting, t
 
 ## Current state
 
-The maintainer has played substantial portions of runs on Steam Frame and confirmed that earlier revisions are playable. The compact gameplay HUD now follows the headset first and stops above the ship only when it would intersect the hull or shield. Equipped weapon entries remain available on the wheel when no drones are installed. Room floors retain role icons and condition colors; health/status bars and counters are removed. System Power, storm-aware free power, native miss feedback and cross-shaped breaches remain available.
+The maintainer has played substantial portions of runs on Steam Frame and confirmed that earlier revisions are playable. The compact gameplay HUD follows the headset first and stops above the ship only when it would intersect the hull or shield. Its collision clearance is now 8 cm, bringing it 6 cm closer. In-run Ship, pause-menu and Options windows appear only above the ship, without a duplicate on the headset HUD. Equipped weapon entries remain available on the wheel when no drones are installed. Room floors retain role icons and condition colors; health/status bars and counters are removed. System Power, storm-aware free power, native miss feedback and cross-shaped breaches remain available.
 
 Core game input, capture, native state and graceful launch/exit have been verified in an isolated game. **Complete campaign coverage and measured stereo headset performance remain open.** Hacking target acceptance is verified; drone attachment/effect completion still needs encounter testing. The renderer presents hazards and some effects approximately while the original game remains authoritative.
 
-The **current source** passed 38 Python tests and nine Godot suites in the prepared source folder. Desktop and VR wrappers passed combined launch/exit in desktop smoke mode, including the GitHub Desktop checkout's FTL-VR alias, with clean client logs and no bridge errors; a separate copied campaign also verified native weapon entries in the rendered wheel. VR preflight passed, while physical Steam Frame comfort and stereo performance remain unmeasured for these changes. Campaign hashes and game executable fingerprints were preserved. Historical Tactical delivery reached about **28–29 updates/second in desktop scene checks**; this is texture delivery, not headset FPS. A clean installation on a different machine has not yet been tested. See [STATUS.md](docs/STATUS.md) for details.
+The **current source** passed 40 Python tests and focused Vulkan HUD/input checks. Native before/after captures verified that Ship, pause-menu and Options windows remain complete above the ship while their duplicate HUD pixels are absent. Both local folders passed their VR-wrapper desktop smoke launches with clean client logs and no bridge errors; setup and VR readiness checks passed separately. Campaign files remained unchanged. **Existing installations must refresh their local hooks** using [Installation step 4](docs/INSTALLATION.md#4-resolve-the-local-executable-hooks).
+
+The preceding revision passed nine Godot suites and combined desktop launch/exit checks. Physical Steam Frame comfort and stereo performance remain to test for these changes. Historical Tactical delivery reached about **28–29 updates/second in desktop scene checks**; this is texture delivery, not headset FPS. A clean installation on a different machine has not yet been tested. See [STATUS.md](docs/STATUS.md) for details.
 
 ## Repository layout
 

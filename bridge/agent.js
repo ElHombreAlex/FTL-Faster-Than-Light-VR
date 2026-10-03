@@ -341,7 +341,9 @@ function attachHudPass() {
     // Only supplemental draw calls are suppressed; the normal game draw runs.
     const symbols={hud_pass:hudPassFlag};
     let code='extern unsigned int hud_pass;\n';
-    const names=['TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','CommandGuiRenderPause','StarMapOnRender'];
+    // Esc and Options are separate render methods from the ship/store tabs.
+    // They belong only to the normal screen capture used by the world panel.
+    const names=['TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','CommandGuiRenderPause','StarMapOnRender','MenuScreenOnRender','OptionsScreenOnRender'];
     for (let i=0;i<names.length;i++) {
         if (!config.rvas[names[i]]) throw new Error('Missing native HUD method '+names[i]);
         symbols['original_'+i]=Memory.alloc(Process.pointerSize);
