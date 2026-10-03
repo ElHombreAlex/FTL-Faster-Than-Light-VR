@@ -14,23 +14,37 @@ This is a playable experimental client connected to the real game. It is suitabl
 | Navigation | Available actions only; actual sector map appears above/ahead of the pilot room and faces the viewer |
 | Menus/dialogs | Main menus remain 2D; in-run native shop/ship, pause-menu and Options windows appear only above the ship; event choices float in the encounter; BUY/SELL panels are retained |
 | Crew | Native positions/tasks/selection, animated procedural race models, grab preview and native move orders; occupied crew face the viewer |
-| Targeting | Weapon and beam room targeting, plus native mind-control, teleporter and hacking target routing |
+| Targeting | Weapon and beam room targeting; persistent player-owned numbered native locks with red/yellow autofire colors, actual beam endpoints/direction and flak spread radius; native mind-control, teleporter and hacking target routing |
 | Systems | Dpad Up and a Navigation button open System Power; native capped reactor availability, storm loss and battery availability remain separate |
 | Doors | Open/closed, locked, damaged/hacked state and thin tier-dependent armor driven by native strength |
 | Combat visuals | Shields/super shields, weapon charge strips/pips, native firing/impact/projectile paths, native miss cues/pass-by presentation and enemy hull bar using locally imported vanilla art |
-| Drones | Distinct procedural space/interior families with deployment/power state and placement by native render space |
-| Hazards | Room fire and cross-shaped breach tiles, oxygen-dependent air wisps and surrounding asteroid, sun, nebula/storm and pulsar presentations |
+| Drones | Distinct procedural space/interior families and Combat/Beam/Defense Mk II hardware; deployment/power state, native render-space placement and visible muzzle shots with native progress/outcomes |
+| Hazards | Room fire and cross-shaped breach tiles, oxygen-dependent air wisps, surrounding asteroid/sun/nebula/storm/pulsar presentations and native jump star stretch along the ship bow with arrival reset |
 | Room feedback | Native role icons and permission-aware condition colors; no floor health/status bars or counters; normal sensor fog still applies |
-| Input | Steam Frame actions, generic fallback profiles, controller infographic, equipment-name/family/ammo action wheel and QWERTY rename keyboard |
+| Input | Steam Frame actions, generic fallback profiles, controller infographic, equipment-name/family/ammo action wheel defaulting to weapons/drones on every opening, and QWERTY rename keyboard |
 | Lifecycle | Isolated game copy, fingerprinted hooks, separate `hs_ftlvr_` saves, pre-launch backup and graceful save/exit |
 
 ## Verification recorded during development
 
-### Latest HUD clearance and menu correction
+### Latest targeting, jump and drone refinements
+
+The source now renders the player's native placed target state as numbered room locks, retaining autofire color, both beam endpoints and native flak radius. Marks remain attached through pause and encounter placement changes; missing targets, destroyed receivers and ended encounters remove them. Only player-owned weapon targets supply these marks. Jump stretch follows the transformed player ship bow and the native `jumping` flag; map opening/FTL charging do not start it. Arrival dialogs reset the sky even while a native jump flag is still clearing. Every wheel opening defaults to weapons/drones, with event choices retaining their separate context.
+
+Procedural drone geometry has distinct family silhouettes and Combat/Beam/Defense Mk II variants. Positive native drone IDs attach shots to the visible muzzle in the drone's current render space; an ambiguous negative ID falls back to its native point at drone height. Bullets preserve their launch point while the drone continues orbiting, and continuing beam sweeps remain attached to the emitter. Native projectile presence, progress, pause and outcomes remain authoritative. The HUD's intruder-warning mask is scoped to its warning region and preserves glyphs, faint shadow/fringe coverage and neighboring controls while making the backdrop transparent.
+
+The combined Python suite passed **44 tests** and **eleven Godot suites** passed, including graphical Vulkan UI/controller/frame checks. Target-lock, jump-star and drone gallery/laser/beam fixtures were rendered and inspected on the RTX 4060 Ti. Drone fixtures produced no invented impacts. Twelve actual native intruder-warning blink captures retained all 1,458 glyph pixels while correcting faint shadow coverage; the normal native HUD frame was unchanged.
+
+A fresh disposable copied profile verified actual normal targeting, native target clearing and autofire. An ordinary click on a connected beacon produced native `jumping=true` through snapshot sequences 96–134, then the arrival dialog at sequence 135; fuel decreased by one. The bridge exited cleanly with no errors. Production archive/settings were restored, and all four campaign hashes plus both executable fingerprints remain unchanged. These are native/desktop checks. Physical Steam Frame comfort and stereo performance remain to test; earlier native evidence below belongs to its recorded revision.
+
+Both standalone folders pass setup checks and their desktop Vulkan launch/exit wrappers; VR preflight passes. The development copy also passes its desktop launch/exit after refreshing an older local extraction manifest. The matching 125-file source-only package passes publication checks with zero failures or warnings. Runtime dependencies, game assets, saves and private QA fixtures remain excluded, and license notices are unchanged.
+
+Existing installations must rerun [Installation step 5](INSTALLATION.md#5-extract-local-presentation-assets) with the current `tools/extract_ftl.py` against their original owned archive. It imports the eight normal/yellow placed reticle PNGs for weapon slots 1–4 into ignored local data. Game artwork is not included in this source release.
+
+### Preceding HUD clearance and menu correction
 
 HUD collision clearance is **8 cm**, reduced by 6 cm while preserving headset-following priority and the ship/shield intersection guard. Separate native pause-menu and Options draw methods are suppressed only during the supplemental HUD pass; the original capture still supplies their complete floating panels. In-run panel ownership also takes priority over a simultaneous native menu flag. Initial and hangar menus keep their full headset screen.
 
-The current source passed **40 Python tests** and focused **Vulkan HUD-layout/input checks** on the RTX 4060 Ti. Native before/after captures from a separate QA profile verified Ship, pause-menu and Options panels: duplicate HUD pixels were absent after the fix and world-panel content was retained. These are desktop/native capture checks; physical Steam Frame comfort and stereo performance still need the maintainer's playtest.
+That revision passed **40 Python tests** and focused **Vulkan HUD-layout/input checks** on the RTX 4060 Ti. Native before/after captures from a separate QA profile verified Ship, pause-menu and Options panels: duplicate HUD pixels were absent after the fix and world-panel content was retained. These are desktop/native capture checks; physical Steam Frame comfort and stereo performance still need the maintainer's playtest.
 
 The updated prepared folder passed `RUN-VR.cmd --smoke`, and the GitHub Desktop checkout passed `RUN-FTL-VR.cmd --smoke`: Vulkan desktop rendering, clean client logs, no bridge errors and disconnected bridges after graceful exit. Both folders passed `CHECK-SETUP.cmd`; VR launch `--check` passed separately. Production archive/settings were restored, hooks refreshed and all four campaign hashes verified again after both launches. Private QA fixtures are absent. The matching 120-file source package passed publication checks with no failures or warnings. These checks do not exercise the physical headset.
 
@@ -66,9 +80,9 @@ Production combined Vulkan launch/save/exit smoke passed: exit 0, clean client l
 | Hacking | Enemy room targeting accepted; attachment/effect completion remains unverified |
 | UI | Native HUD during Tactical/map/store/event/ship modes; enemy-region transparency; BUY/SELL content; rename input and original fonts checked across development revisions |
 | Drones | Native equipment/special/global lists deduplicated; actual combat and interior battle-drone state inspected |
-| Automated tests | Current source passed 40 Python tests and focused Vulkan HUD/input checks; the preceding revision passed nine Godot suites with GPU UI/controller/transport checks |
+| Automated tests | Current 44 Python tests and eleven Godot suites pass; native normal/cleared/autofire targets, jump/arrival and warning blink captures pass; previous revision results are recorded above |
 | Desktop graphics | Vulkan rendering and model/UI inspection checked on RTX 4060 Ti 8 GB |
-| Save handling | Current desktop-wrapper launch/exit and copied-profile native checks preserved all four original campaign hashes |
+| Save handling | Fresh copied-profile native checks and final launch/exit smokes preserve all four campaign hashes; production prefix/archive/settings and both executable fingerprints are verified |
 | Steam Frame play | Maintainer confirmed playability and substantial partial runs; latest changes need further hardware coverage |
 
 The automated suite uses synthetic fixtures for many edge cases. A passing test does not establish that every race, layout, weapon, drone, hazard or boss encounter has been exercised in a campaign.

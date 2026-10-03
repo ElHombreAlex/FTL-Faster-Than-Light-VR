@@ -29,16 +29,18 @@ After installing the documented Python requirements, run from the repository roo
 python -m unittest discover -s tools -p "test_*.py"
 ```
 
-The current source passed **40 Python tests**, including empty native drone-list, portable-launcher and modal-HUD hook/preflight regressions. The tests exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering, raw frame publication and launcher preflight/error handling. They do not launch FTL. Temporary fixture files are created by the tests. Godot suites and focused native checks are recorded in [STATUS](STATUS.md); physical headset coverage remains separate.
+The current suite passed **44 Python tests**, including empty native drone-list, portable-launcher and modal-HUD hook/preflight regressions. The tests exercise synthetic archive/layout/font extraction, bridge schema/input translation, native-pixel filtering, raw frame publication and launcher preflight/error handling. They do not launch FTL. Temporary fixture files are created by the tests. Final Godot and fresh native-game checks for the latest targeting/jump/drone batch are pending; earlier results and focused drone fixture checks are recorded in [STATUS](STATUS.md). Physical headset coverage remains separate.
 
 ## Godot checks
 
 Use a **separate development checkout or disposable local-data folder** with the required extracted assets. Some suites write screenshots/test frames under `local_game_data/`; do not run them over an active production bridge or package those outputs. Create the local output folder before graphical suites if it is missing.
 
-The nine suites below passed for the preceding HUD/wheel/bar revision in the configured development environment. The latest clearance/menu correction reran focused Vulkan HUD-layout and input checks, plus native before/after capture checks. See [STATUS](STATUS.md) for evidence and limits. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete.
+The commands below list eleven suites, including the new target-lock and drone resource/variant checks. The preceding HUD/wheel/bar revision passed nine suites; the following clearance/menu correction reran focused Vulkan HUD-layout and input checks plus native before/after capture checks. The latest batch's final combined Godot run and fresh native proof are pending. See [STATUS](STATUS.md) for evidence and limits. A fresh source checkout lacks game assets; model/input/font checks may fail until local extraction is complete. Existing installations should also rerun [asset extraction](INSTALLATION.md#5-extract-local-presentation-assets) to import the eight placed reticle PNGs.
 
 ```powershell
 godot --headless --xr-mode off --path . --script tools/test_combat.gd -- --demo
+godot --headless --xr-mode off --path . --script tools/test_target_locks.gd
+godot --headless --xr-mode off --path . --script tools/test_drones.gd
 godot --headless --xr-mode off --path . --script tools/test_input.gd -- --demo --desktop
 godot --headless --xr-mode off --path . --script tools/test_models.gd -- --demo --desktop
 godot --headless --xr-mode off --path . --script tools/test_environment.gd -- --demo --desktop
@@ -50,6 +52,8 @@ godot --headless --xr-mode off --path . --script tools/test_damage_visuals.gd --
 ```
 
 The UI/controller/transport suites use actual GPU rendering, so keep their graphical mode. Headless runs of them are not equivalent verification. These suites cover effects, room/beam picking, controller context/bindings, model/task distinctions, environmental presentation, original local fonts, UI priority/crops and the raw frame protocol. HUD-layout checks cover headset-relative placement, swept collision prevention and transformed ship/shield clearance. Controller checks include native empty/malformed equipment collections. Damage-visual checks cover permission-aware room colors, absence of floor status bars, native miss presentation and oxygen-dependent breach effects.
+
+Target-lock checks cover numbered player-owned native targets, autofire color, beam endpoint direction, pinpoint beams, flak radius, transformed/pause attachment, receiver visibility and cleanup. Drone checks cover distinct Mk II hardware, shared immutable body/exhaust/emitter geometry and independent emission state. Combat checks include native drone muzzle/render-space placement, fixed bullet launch points, continuing beams and authoritative progress/pause/outcome handling. Jump checks use native `jumping` and arrival-dialog fixtures; the action-wheel context checks include resetting each opening to weapons/drones.
 
 No test command above drives a native game or modifies its saves. Separate **live bridge checks** do run the game and can advance a run or change equipment/state.
 
@@ -87,6 +91,7 @@ Additional helpers:
 |---|---|
 | `tools/benchmark_effects.gd` | Renderer effect benchmark; desktop results only |
 | `tools/capture_models.gd` | Local model/weapon gallery |
+| `tools/capture_drones.gd` | Procedural drone gallery; `--shots` renders explicit native-schema laser/beam fixtures |
 | `tools/capture_ship_details.gd` | Explicit visual fixture for door tiers, fire/breach effects and hull bar |
 | `tools/capture_environment.gd` | Environmental presentation inspection |
 | `tools/capture_native_models.gd` | Inspect models from an owner-local native snapshot |

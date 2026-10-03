@@ -1,4 +1,4 @@
-"""Remove only edge-connected cleared black pixels, retaining black UI ink."""
+"""Keep native UI ink while making the cleared world transparent."""
 import numpy as np
 
 
@@ -39,4 +39,39 @@ def clear_world_alpha(pixels):
     for y, x0, x1, i in runs:
         if edge[root(i)]:
             result[y, x0:x1, 3] = 0
+    return result
+
+
+def clear_supplemental_hud_alpha(pixels):
+    """Correct native warning fringes in the independently cleared HUD pass.
+
+    FTL paints faint warning-text shadows with nonzero RGB and fractional
+    alpha. The legacy screen conversion makes those almost-black pixels
+    opaque. Use their actual coverage in the warning band only; framed HUD
+    controls still need the contour fill to retain their original black ink.
+    Full screens and native windows do not use this supplemental conversion.
+    """
+    result = clear_world_alpha(pixels)
+    # At the native 1280x720 HUD coordinates, warnings sit between the top
+    # controls and the weapon bar, to the right of crew and left of target UI.
+    # They shift horizontally when an enemy arrives, so cover both positions.
+    height, width = pixels.shape[:2]
+    left, right = round(400 * width / 1280), round(872 * width / 1280)
+    top, bottom = round(160 * height / 720), round(360 * height / 720)
+    source = pixels[top:bottom,left:right]
+    warning = result[top:bottom,left:right]
+    if not source.size:
+        return result
+    # RGB already includes FTL's warning blink/fade. Do not multiply faded red
+    # glyphs by their raw FBO alpha a second time: only recover coverage for
+    # the almost-black texture fringe, relative to the current glyph peak.
+    colors = source[:, :, :3].astype(np.int16)
+    reddish = (colors[:, :, 0] > colors[:, :, 1] * 2) & (colors[:, :, 0] > colors[:, :, 2] * 2)
+    glyphs = reddish & (colors[:, :, 0] > 8)
+    if not np.any(glyphs):
+        return result
+    brightness = np.max(colors, axis=2)
+    fringe_limit = max(1.0, float(colors[:, :, 0][glyphs].max()) * 0.35)
+    faint_coverage = (source[:, :, 3] <= 8) & (brightness <= fringe_limit) & reddish
+    warning[:, :, 3][faint_coverage] = source[:, :, 3][faint_coverage]
     return result

@@ -18,6 +18,12 @@ func run() -> void:
 	XRServer.add_tracker(tracker)
 	scene._resolve_controller_pose(scene.right_hand)
 	check(scene.right_hand.pose == "aim" and scene.right_hand.get_is_active(), "Right hand must use the active aim tracker pose")
+	var initial_ship_pose: Transform3D = scene.player_ship.transform
+	scene.player_ship.rotation.y = PI / 2
+	scene._sync_jump_heading()
+	check(scene.space_environment.travel_direction.is_equal_approx(Vector3.FORWARD), "Jump streaks must follow the ship's transformed bow rather than the headset")
+	scene.player_ship.transform = initial_ship_pose
+	scene._sync_jump_heading()
 	scene._update_pointer()
 	check(scene.right_laser.visible and scene.right_laser.mesh is CylinderMesh, "Tracked hand must draw a stereo-visible ray")
 	check(scene.right_laser.material_override.no_depth_test, "Ray must remain visible over the native menu")
@@ -132,6 +138,17 @@ func run() -> void:
 	scene._cycle_hand_page(1)
 	check(scene.pending_page == "shortcuts" and scene.commands.back().data.screen == "tactical","Changing screen must first close the native tactical view")
 	scene.hud_state.tactical = false
+	scene.wheel_category = 2
+	scene.wheel_was_down = false
+	tracker.set_input("wheel_button", true)
+	scene._update_wheel()
+	check(scene.wheel_category == 0 and scene.wheel.heading == "WEAPONS\nDRONES", "Each new wheel hold must return to equipment rather than retaining a system category")
+	scene.wheel_category = 1
+	scene._update_wheel()
+	check(scene.wheel_category == 1, "A held wheel must retain a manually chosen category")
+	tracker.set_input("wheel_button", false)
+	scene._update_wheel()
+	check(scene.wheel_category == 0, "Closing the wheel must restore its equipment default")
 	scene._refresh_wheel()
 	check(scene.wheel.entries[0].enabled and not scene.wheel.entries[1].enabled and scene.wheel.entries[4].enabled,"Wheel must show only equipped weapon/drone slots as available")
 	scene.wheel.choose(Vector2(0,1))

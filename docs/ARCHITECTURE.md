@@ -33,6 +33,7 @@ The normal launcher coordinates both programs. Commands call the verified game p
 | [tools/extract_ftl.py](../tools/extract_ftl.py) | Owner-local layouts, hull images, UI icons/artwork and bitmap fonts |
 | [scripts/ship_model.gd](../scripts/ship_model.gd), `voxel_*.gd` | Volumetric hull presentation, doors, crew, weapons and drones |
 | [scripts/combat_effects.gd](../scripts/combat_effects.gd), [scripts/space_environment.gd](../scripts/space_environment.gd) | Native-driven shot presentation and surrounding space/hazards |
+| [scripts/target_locks.gd](../scripts/target_locks.gd) | Player-owned native placed target marks, weapon slot/autofire cues, beam direction and flak radius |
 | `scripts/hud_*.gd`, `controller_*.gd`, `ftl_ui_*.gd` | Original captured HUD, themed hand screens, Help infographic and local font decoding |
 | [scripts/shortcut_wheel.gd](../scripts/shortcut_wheel.gd), [scripts/rename_keyboard.gd](../scripts/rename_keyboard.gd) | Contextual shortcuts and native rename field interaction |
 
@@ -43,6 +44,12 @@ The Lua snapshot protocol identifies its source as Hyperspace and includes ships
 Godot uses this state to place and animate visual actors. Native positions, current ship/space, ownership, deployment, cooldowns and sensor visibility matter independently. For example, an enemy-owned combat drone attacking the player renders around the player ship. Boarding crew render on the ship they currently occupy.
 
 Projectiles originate from native weapon/drone locations and follow native shot information. Rendering does not determine hits or damage. Pause freezes presentation clocks while keeping actual native paused projectiles visible and removing stale shots. Environmental animation conveys the current hazard; exact hazard timing remains a polish/verification area.
+
+Placed weapon locks use the player's current native `targets`, `target_ship`, `autofire`, beam length and flak radius, independently of the currently armed cursor. The renderer does not infer locks from projectile history or expose enemy weapon intent. Native beam targets supply both endpoints and their sweep direction; incomplete endpoints do not create a fabricated beam lock. Room marks inherit the receiver's transform through pause, movement, tilt and scale. Clearing native targets or leaving the encounter removes their marks.
+
+Space drones use native IDs and current render space to locate the procedural model's visible muzzle. Bullet launch points stay fixed in that space as the drone moves; a continuing native beam remains attached to its emitter. Ambiguous negative drone IDs use the native origin point at drone height. Native shot kind, live progress, presence and actual collision outcome control presentation. Model bodies, exhaust, emitters and tools share immutable geometry; emission state uses cached materials without changing another drone's glow. Combat, Beam and Defense Mk II variants have distinct hardware.
+
+Jump stretch starts from the native ship `jumping` flag and follows the transformed player ship bow projected into the horizontal world plane. Opening the map or charging FTL does not start travel. Arrival/dialog state resets the sky, including the interval before the native jump flag finishes clearing. Native jump rendering can continue while combat simulation is paused. The old beacon's surrounding hazard presentation is hidden during travel.
 
 The native missed flag and a post-update event feed evasion feedback so brief missed shots can produce a single MISS cue even between snapshot deliveries. Room condition colors respect native information permissions; role icons and hazards remain, without floor health/status bars or counters. Reactor snapshots distinguish raw availability from usable availability after native capacity/environmental limits; battery availability is separate. Equipped localized weapon/drone metadata is distinct from deployed drone actors, keeping wheel labels tied to actual shortcut slots. Optional collections are normalized by the bridge and parsed defensively by the wheel: Lua may encode an empty table as `{}` rather than `[]`.
 
@@ -56,11 +63,15 @@ Transport uses atomic raw RGBA files with an `FVR1` header, dimensions, sequence
 
 The client reuses textures, reads only fresh frames and renders UI subviewports on changes. HUD/panel crops and alpha-aware pointing preserve native control coordinates. The hand panel receives priority over the gameplay HUD where they overlap. Rooms use floor intersections for targeting and crew drops, avoiding doors or miniatures blocking the intended destination.
 
+The native intruder warning receives a transparency mask scoped to its HUD region. It preserves warning glyph RGB/opacity, faint shadow/fringe coverage and neighboring controls while removing the dark backdrop. Each normal action-wheel opening resets to weapons/drones; event-choice context continues to use the native dialog identity.
+
 ## Local assets and generated data
 
 `local_game_data/` is intentionally absent from this source package and ignored by Git. Each player extracts required content from their owned `ftl.dat`. The bridge can produce layout/image variants for encountered ships from that same local archive. The original soundtrack plays through FTL itself.
 
 Hull artwork, system icons, fonts and captured game pixels are owner-local. Crew, weapon and drone geometry is created by the project's procedural model code. Shared immutable meshes/materials, cached icons/shields and batched room-hazard transforms reduce scene overhead.
+
+The local extractor also imports eight native placed reticles: `img/misc/crosshairs_placed1.png` through `crosshairs_placed4.png` and their `_yellow` autofire variants. Existing installations must rerun the current extractor against their original owned archive. A procedural numbered/color fallback preserves targeting cues when those local images are absent; the source package contains no extracted reticle artwork.
 
 During a live session local files include state, frame streams, the command queue, bridge status, tracking diagnostics and logs. These are transient operational files; do not commit them or include a live local-data folder in a source release.
 

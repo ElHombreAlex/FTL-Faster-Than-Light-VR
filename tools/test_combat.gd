@@ -192,6 +192,68 @@ func _run() -> void:
 	effects.update_live_projectiles([{"id": "paused-beam", "progress": 0.4}])
 	effects.resolve_live({"projectile_id": "paused-beam", "outcome": "beam", "target": beam_point}, enemy)
 	_check(effects.shots.size() == 1, "A paused beam tile hit must retain the native continuing sweep")
+	effects.update_live_projectiles([])
+	effects.simulation_paused = false
+	effects._process(0.3)
+	# A player-owned drone is physically modeled in the receiver's native space.
+	# Attach a fire record to that exact muzzle before testing orbital motion and
+	# independent pause versus encounter transforms.
+	enemy._apply_drones([{"id": "88001", "name": "COMBAT_2", "kind": "combat", "is_space": true,
+		"powered": true, "deployed": true, "x": 90, "y": 130, "angle": 35.0}])
+	var actual_drone: Node3D = enemy.drone_nodes["88001"]
+	var native_drone_event := {"kind": "laser", "outcome": "pending", "projectile_id": "drone-native",
+		"drone_id": "88001", "origin_space": 1, "origin_point": drone_origin,
+		"target_space": 1, "target": drone_target}
+	var muzzle: Vector3 = actual_drone.muzzle_position("drone-native")
+	effects.spawn_shot(native_drone_event, player, enemy)
+	effects.update_live_projectiles([{"id": "drone-native", "progress": 0.25}])
+	effects._process(0.1)
+	var drone_shot: Dictionary = effects.shots.back()
+	_check(Vector3(drone_shot["start"]).is_equal_approx(muzzle), "Native drone fire must originate at the visible muzzle in its current render space")
+	_check(drone_shot["node"].mesh.get_aabb().size.z < 0.1, "Drone bullets must remain sized for their small native emitters")
+	actual_drone.position += Vector3(0.2, 0, 0.1)
+	effects._process(0.1)
+	_check(Vector3(drone_shot["start"]).is_equal_approx(muzzle), "Later orbital drone movement must not move a bullet's original launch point")
+	var launch_local: Vector3 = enemy.to_local(muzzle)
+	var paused_progress: float = drone_shot["live_progress"]
+	effects.simulation_paused = true
+	enemy.position += Vector3(0.3, 0.1, -0.2)
+	enemy.rotation += Vector3(0.15, 0.2, 0.08)
+	enemy.scale = Vector3.ONE * 0.7
+	effects._process(0.5)
+	_check(Vector3(drone_shot["start"]).is_equal_approx(enemy.to_global(launch_local)), "Paused drone shots must follow encounter position, tilt and scale without advancing their native flight")
+	_check(is_equal_approx(drone_shot["live_progress"], paused_progress), "Repositioning a paused encounter must preserve native projectile progress")
+	_check(is_equal_approx(drone_shot["node"].global_basis.x.length(), enemy.global_basis.x.length()), "An orbiting drone's projectile size must follow its physical render space rather than its owner ship")
+	effects.update_live_projectiles([])
+	effects.simulation_paused = false
+	var beam_event := native_drone_event.duplicate()
+	beam_event.merge({"kind": "beam", "projectile_id": "drone-beam", "end_point": {"x": 200, "y": 130}}, true)
+	effects.spawn_shot(beam_event, player, enemy)
+	effects.update_live_projectiles([{"id": "drone-beam", "progress": 0.5, "beam_point": drone_target}])
+	actual_drone.position += Vector3(0.1, 0, -0.05)
+	effects._process(0.1)
+	var drone_beam: Dictionary = effects.shots.back()
+	_check(Vector3(drone_beam["start"]).is_equal_approx(actual_drone.muzzle_position("drone-beam")), "A continuing native drone beam must remain attached to its actual visible emitter")
+	_check(drone_beam["node"].get_node_or_null("BeamCore") != null and drone_beam["node"].mesh is ImmediateMesh, "A native beam drone must render a sweep, never an invented laser bullet")
+	var drone_beam_core: MeshInstance3D = drone_beam["node"].get_node("BeamCore")
+	_check(drone_beam_core.global_position.is_equal_approx((drone_beam["start"] + enemy.to_global(enemy.pixel_point(drone_target))) * 0.5), "The native beam's exact live endpoint and muzzle must bound its visible geometry")
+	effects.update_live_projectiles([{"id": "drone-beam", "progress": 1.0, "beam_point": drone_target}])
+	effects._process(0.1)
+	_check(effects.shots.size() == 1, "Native progress at one must not delete a still-present beam or invent its outcome")
+	effects.update_live_projectiles([])
+	var fallback_event := native_drone_event.duplicate()
+	fallback_event.merge({"drone_id": "-1", "projectile_id": "negative-native"}, true)
+	enemy.drone_nodes["-1"] = actual_drone
+	effects.spawn_shot(fallback_event, player, enemy)
+	_check(Vector3(effects.shots.back()["start"]).is_equal_approx(enemy.to_global(enemy.pixel_point(drone_origin, 0.3))), "An ambiguous negative native drone id must use its real native point at drone height")
+	enemy.drone_nodes.erase("-1")
+	effects.update_live_projectiles([{"id": "negative-native", "progress": 0.3}])
+	effects.update_live_projectiles([])
+	var first_bullet: MeshInstance3D = effects._projectile_visual("laser", Color.ORANGE, true)
+	var second_bullet: MeshInstance3D = effects._projectile_visual("laser", Color.ORANGE, true)
+	_check(first_bullet.mesh == second_bullet.mesh and first_bullet.get_child(0).mesh == second_bullet.get_child(0).mesh, "Repeated drone shots must reuse both core and trail geometry")
+	first_bullet.free()
+	second_bullet.free()
 	print("COMBAT_TESTS ", "PASS" if failures == 0 else "FAIL: %d" % failures)
 	scene.queue_free()
 	await process_frame

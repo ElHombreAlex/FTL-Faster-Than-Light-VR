@@ -1,11 +1,13 @@
 extends Node3D
 
-# Stationary surroundings: three draw calls cover the entire sky, with a sparse
-# nearer shell for stereo parallax. No captured 2D background is used here.
+# Three draw calls cover the entire sky, with a sparse nearer shell for stereo
+# parallax. Native FTL travel stretches those same stars along the ship's bow.
 const STAR_COUNT := 1600
 const NEAR_STAR_COUNT := 96
 const GALAXY_COUNT := 420
 const VALID_HAZARDS := ["clear", "asteroid", "sun", "storm", "nebula", "pulsar"]
+const JUMP_STRETCH_RATE := 4.0
+const STAR_MAX_STRETCH := 55.0
 
 var star_positions := PackedVector3Array()
 var hazard := "clear"
@@ -19,6 +21,25 @@ var storm_arcs: Array[MeshInstance3D] = []
 var built := false
 var cloud_material: ShaderMaterial
 var body_material: ShaderMaterial
+var star_material: ShaderMaterial
+var travel_direction := Vector3.RIGHT
+var jump_active := false
+var jump_stretch := 0.0
+var _arrival_during_jump := false
+
+const STAR_SHADER := """
+shader_type spatial;
+render_mode unshaded;
+uniform vec3 travel_direction = vec3(1.0, 0.0, 0.0);
+uniform float jump_stretch : hint_range(0.0, 1.0) = 0.0;
+uniform float max_stretch = 55.0;
+void vertex() {
+    float amount = smoothstep(0.0, 1.0, jump_stretch);
+    float along = dot(VERTEX, travel_direction);
+    VERTEX += travel_direction * along * amount * (max_stretch - 1.0);
+}
+void fragment() { ALBEDO = COLOR.rgb; }
+"""
 
 const CLOUD_SHADER := """
 shader_type spatial;
@@ -92,6 +113,11 @@ func build() -> void:
 		return
 	built = true
 	name = "SpaceEnvironment"
+	star_material = ShaderMaterial.new()
+	star_material.shader = Shader.new()
+	star_material.shader.code = STAR_SHADER
+	star_material.set_shader_parameter("max_stretch", STAR_MAX_STRETCH)
+	_update_travel_direction()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 26011002
 	_star_shell("DistantStars360", STAR_COUNT, 30.0, 58.0, rng, false)
@@ -107,9 +133,49 @@ func apply_state(state: Dictionary) -> void:
 	if not built:
 		build()
 	simulation_paused = bool(state.get("paused", false))
+	# transition also covers pending events, so only the native ship jump flag
+	# starts travel. Opening the map or charging FTL cannot animate the sky.
+	var native_jumping := bool(state.get("jumping", false))
+	if not native_jumping:
+		_arrival_during_jump = false
+	if bool(state.get("event_open", false)):
+		_arrival_during_jump = native_jumping
+	jump_active = native_jumping and not _arrival_during_jump and \
+		not bool(state.get("event_open", false)) and bool(state.get("ready", true)) and \
+		str(state.get("ui_mode", "game")) != "menu"
+	if not jump_active:
+		_set_jump_stretch(0.0)
+	# The old beacon's sun/asteroids/clouds do not travel with the ship.
+	hazard_root.visible = not jump_active
 	var next := str(state.get("hazard", "clear"))
 	if next in VALID_HAZARDS and next != hazard:
 		_set_hazard(next)
+
+
+func set_travel_direction(world_direction: Vector3) -> void:
+	# Main supplies the transformed player ship bow; headset turns never change
+	# this direction. FTL's tabletop travel stays horizontal in the room.
+	var horizontal := Vector3(world_direction.x, 0.0, world_direction.z)
+	if horizontal.length_squared() < 0.0001 or not horizontal.is_finite():
+		return
+	var direction := horizontal.normalized()
+	if direction.is_equal_approx(travel_direction):
+		return
+	travel_direction = direction
+	_update_travel_direction()
+
+
+func _update_travel_direction() -> void:
+	if star_material != null:
+		var local_direction := global_basis.inverse() * travel_direction
+		star_material.set_shader_parameter("travel_direction", local_direction.normalized())
+
+
+func _set_jump_stretch(amount: float) -> void:
+	if is_equal_approx(jump_stretch, amount):
+		return
+	jump_stretch = amount
+	star_material.set_shader_parameter("jump_stretch", jump_stretch)
 
 
 func set_hazard(kind: String) -> void:
@@ -131,7 +197,9 @@ func _star_shell(node_name: String, count: int, near_radius: float, far_radius: 
 	stars.use_colors = true
 	stars.mesh = sphere
 	stars.instance_count = count
-	stars.custom_aabb = AABB(Vector3.ONE * -far_radius, Vector3.ONE * far_radius * 2.0)
+	# Vertex shader streaks extend beyond the unmodified MultiMesh bounds.
+	var bound := far_radius + STAR_MAX_STRETCH * 0.05
+	stars.custom_aabb = AABB(Vector3.ONE * -bound, Vector3.ONE * bound * 2.0)
 	for i in range(count):
 		var y := rng.randf_range(-1.0, 1.0)
 		var angle := rng.randf_range(0.0, TAU)
@@ -156,11 +224,7 @@ func _star_shell(node_name: String, count: int, near_radius: float, far_radius: 
 	node.name = node_name
 	node.multimesh = stars
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.vertex_color_use_as_albedo = true
-	material.albedo_color = Color.WHITE
-	node.material_override = material
+	node.material_override = star_material
 	add_child(node)
 
 
@@ -318,7 +382,13 @@ func _build_nebula(kind: String) -> void:
 
 
 func _process(delta: float) -> void:
-	if simulation_paused or not built:
+	if not built:
+		return
+	# Native jump rendering advances while combat simulation is paused. This
+	# presentation follows that travel even when paused/frozen is reported.
+	if jump_active:
+		_set_jump_stretch(move_toward(jump_stretch, 1.0, maxf(0.0, delta) * JUMP_STRETCH_RATE))
+	if simulation_paused or jump_active:
 		return
 	elapsed += delta
 	for rock in rocks:

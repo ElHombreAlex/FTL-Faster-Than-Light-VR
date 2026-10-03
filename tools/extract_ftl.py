@@ -199,7 +199,9 @@ def main() -> None:
         name.startswith(("img/statusUI/", "img/systemUI/", "img/icons/", "img/combatUI/"))
         or name in {"img/box_subsystems4.png", "img/box_weapons_bottom4.png",
                     "img/box_weapons_bottom_label.png", "img/box_weapons_autofire_base.png",
-                    "img/Text_pause1.png", "img/Text_pause2.png"})]
+                    "img/Text_pause1.png", "img/Text_pause2.png"}
+        or name in {f"img/misc/crosshairs_placed{slot}{variant}.png"
+                    for slot in range(1,5) for variant in ("", "_yellow")})]
     for name in ui_paths:
         destination = args.output / "ui" / name
         destination.parent.mkdir(parents=True, exist_ok=True)

@@ -15,7 +15,7 @@ from pathlib import Path
 import frida
 from PIL import Image
 from extract_ftl import Pkg, build_ship
-from hud_alpha import clear_world_alpha
+from hud_alpha import clear_world_alpha, clear_supplemental_hud_alpha
 
 
 def atomic_json(path, value):
@@ -102,6 +102,8 @@ def decode_state_line(line):
             for room in result[side]['rooms']:
                 for field in ('fire_tiles','breach_tiles'):
                     if not isinstance(room.get(field),list): room[field]=[]
+            for weapon in result[side]['weapons']:
+                if isinstance(weapon,dict) and 'targets' in weapon and not isinstance(weapon['targets'],list): weapon['targets']=[]
     if isinstance(result.get('dialog'),dict) and not isinstance(result['dialog'].get('choices'),list):
         result['dialog']['choices']=[]
     # vCrewList ownership/current-ship membership can differ during boarding.
@@ -445,7 +447,7 @@ def main():
                 panel_pixels=None
                 if payload['type']=='hud_frame':
                     if full_screen_capture(snapshot): continue
-                    last_hud_image=Image.fromarray(remove_enemy_hud(clear_world_alpha(pixels)))
+                    last_hud_image=Image.fromarray(remove_enemy_hud(clear_supplemental_hud_alpha(pixels)))
                     publisher.publish('hud_frame',last_hud_image,captured_at)
                     with state_lock: current['capture_full_screen']=False
                     continue

@@ -12,6 +12,7 @@ const ControllerPanel = preload("res://scripts/controller_panel.gd")
 const PoseFilter = preload("res://scripts/pose_filter.gd")
 const EnemyHullBar = preload("res://scripts/enemy_hull_bar.gd")
 const UiAssets = preload("res://scripts/ftl_ui_assets.gd")
+const TargetLocks = preload("res://scripts/target_locks.gd")
 
 var xr_active := false
 var origin: XROrigin3D
@@ -27,6 +28,7 @@ var gameplay_hud := false
 const GAMEPLAY_HUD_RECT := Rect2(0, 0, 872, 510)
 const GAMEPLAY_HUD_SIZE := Vector2(1.10, 1.10 * 510.0 / 872.0)
 var combat_effects: Node3D
+var target_locks: Node3D
 var hud_state: Dictionary = {}
 var seen_shots: Dictionary = {}
 var right_laser: MeshInstance3D
@@ -140,6 +142,8 @@ func _ready() -> void:
 	_create_rename_keyboard()
 	wheel = ShortcutWheel.new()
 	add_child(wheel)
+	target_locks = TargetLocks.new()
+	add_child(target_locks)
 	_set_hazard("clear")
 	var interface := XRServer.find_interface("OpenXR")
 	if "--desktop" not in OS.get_cmdline_user_args() and interface != null and (interface.is_initialized() or interface.initialize()):
@@ -627,6 +631,8 @@ func _update_power_controls(remove: bool, previous: bool, next: bool) -> void:
 func _update_wheel() -> void:
 	var down := right_hand.get_is_active() and right_hand.is_button_pressed("wheel_button")
 	if down and not wheel_was_down:
+		# Categories apply to this hold only; every new opening starts on equipment.
+		wheel_category = 0
 		wheel_committed = false
 		wheel_dialog_id = str(hud_state.get("dialog", {}).get("id", ""))
 		wheel.visible = not rename_keyboard.visible and (hud_state.get("event_open", false) or _game_actions_available())
@@ -646,6 +652,7 @@ func _update_wheel() -> void:
 		if wheel.visible:
 			_commit_wheel()
 		wheel.visible = false
+		wheel_category = 0
 	wheel_was_down = down
 
 
@@ -690,6 +697,11 @@ func _commit_wheel() -> void:
 	wheel.visible = false
 
 
+func _sync_jump_heading() -> void:
+	var local_bow := Vector3.FORWARD if int(player_ship.layout_data.get("vertical", 0)) != 0 else Vector3.RIGHT
+	space_environment.set_travel_direction(player_ship.global_basis * local_bow)
+
+
 func _process(delta: float) -> void:
 	if world_surface.visible:
 		world_panel_open_age += delta
@@ -703,6 +715,7 @@ func _process(delta: float) -> void:
 	player_ship.simulation_paused = paused
 	enemy_ship.simulation_paused = paused
 	space_environment.simulation_paused = paused
+	_sync_jump_heading()
 	var viewer := camera.get_camera_transform().origin
 	player_ship.set_viewer_position(viewer)
 	enemy_ship.set_viewer_position(viewer)
@@ -1185,6 +1198,7 @@ func _poll_bridge_state() -> void:
 	if new_battle != battle:
 		battle = new_battle
 		_update_ship_positions()
+	target_locks.apply_snapshot(state, player_ship, enemy_ship)
 	var new_hazard := str(state.get("hazard", hazard))
 	if new_hazard in ["clear", "asteroid", "sun", "storm", "nebula", "pulsar"] and new_hazard != hazard:
 		_set_hazard(new_hazard)

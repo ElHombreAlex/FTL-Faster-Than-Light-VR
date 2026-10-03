@@ -7,7 +7,11 @@ const RIM := Color("d3dcda")
 const DARK := Color("354b59")
 const BLACK := Color("182832")
 const BRASS := Color("c6ac75")
+const SLATE := Color("718b9a")
+const RED := Color("b75847")
 static var body_meshes: Dictionary = {}
+static var detail_meshes: Dictionary = {}
+static var glow_materials: Dictionary = {}
 static var body_material: StandardMaterial3D
 var drone_name := ""
 var kind := "combat"
@@ -20,6 +24,9 @@ var tool: MeshInstance3D
 var live_data: Dictionary = {}
 var animation_time := 0.0
 var firing := false
+var mark_two := false
+var fire_flash := 0.0
+var emitter_color := Color.WHITE
 
 
 static func model_family(data: Dictionary) -> String:
@@ -52,7 +59,9 @@ func build(data: Dictionary) -> void:
 	is_space = bool(data.get("is_space", true))
 	family = model_family(data)
 	animation_time = 0.0
-	var mark_two := drone_name.ends_with("_2") and family in ["combat", "defense"]
+	firing = false
+	fire_flash = 0.0
+	mark_two = drone_name.ends_with("_2") and family in ["combat", "beam", "defense"]
 	var cache_key := family + ("_2" if mark_two else "")
 	if not body_meshes.has(cache_key):
 		var source := Voxels.make(_body_blocks(mark_two))
@@ -75,6 +84,8 @@ func build(data: Dictionary) -> void:
 			exhaust = [_b(-6.6, -1.3, 0, 2.0, 1.0, 2.4, glow)]
 		elif family == "hacking":
 			exhaust = [_b(-5.4, 0, 0, 2.0, 1.2, 2.0, glow)]
+		elif family == "anti_drone":
+			exhaust = [_b(-8.4, -0.5, -4.8, 2.4, 1.2, 1.8, glow), _b(-8.4, -0.5, 4.8, 2.4, 1.2, 1.8, glow)]
 		else:
 			for side in [-1.0, 1.0]:
 				exhaust.append(_b(-8.4, -0.5, side * 5.4, 2.4, 1.2, 1.8, glow))
@@ -84,10 +95,13 @@ func build(data: Dictionary) -> void:
 				for z in ([-1.8, 1.8] if mark_two else [0.0]): lights.append(_b(13.2, 0.3, z, 0.6, 1.3, 1.3, glow))
 			"beam":
 				glow = Color("ffdc76")
-				lights = [_b(13.0, 0, 0, 0.6, 1.0, 3.7, glow)]
-			"defense", "anti_drone":
+				lights = [_b(13.0, 0, 0, 0.6, 1.0, 5.4 if mark_two else 3.7, glow)]
+			"defense":
 				glow = Color("98e5aa")
 				for z in ([-1.5, 1.5] if mark_two else [0.0]): lights.append(_b(10.7, 2.4, z, 0.6, 1.3, 1.3, glow))
+			"anti_drone":
+				glow = Color("a9dfe9")
+				lights = [_b(12.4, 1.1, -3.0, 0.7, 1.0, 1.0, glow), _b(12.4, 1.1, 3.0, 0.7, 1.0, 1.0, glow)]
 			"hacking":
 				glow = Color("b591e0")
 				lights = [_b(0, 2.6, 0, 2.6, 0.4, 2.6, glow)]
@@ -99,10 +113,11 @@ func build(data: Dictionary) -> void:
 	else:
 		glow = Color("ef736a") if family == "battle" else Color("7fdafa")
 		lights = [_b(0, 9.0, -3.0, 2.8, 0.7, 0.3, glow)]
-	thruster = _glow_mesh(exhaust, Color("69d8fa"))
+	thruster = _glow_mesh(cache_key + ":exhaust", exhaust, Color("69d8fa"))
 	thruster.name = "Exhaust"
 	add_child(thruster)
-	emitter = _glow_mesh(lights, glow)
+	emitter_color = glow
+	emitter = _glow_mesh(cache_key + ":emitter", lights, glow)
 	emitter.name = "Emitter"
 	add_child(emitter)
 	tool = null
@@ -114,11 +129,30 @@ func build(data: Dictionary) -> void:
 		else:
 			tool_blocks = [_b(0, -1.2, 0, 1.8, 3.0, 2.0, DARK), _b(0, -2.4, -1.0, 2.7, 1.0, 3.0, STEEL),
 				_b(-1.0, -2.9, -2.0, 0.6, 1.1, 1.7, RIM), _b(1.0, -2.9, -2.0, 0.6, 1.1, 1.7, RIM)]
-		tool = Voxels.make(tool_blocks)
+		tool = _cached_part(cache_key + ":tool", tool_blocks)
 		tool.name = "Tool"
 		tool.position = Vector3(5.2, 6.3, 0) * UNIT
 		add_child(tool)
 	set_live(data)
+
+
+func muzzle_position(projectile_id: String = "") -> Vector3:
+	# Models face +X like native drone angles. Resolve through the model's real
+	# world transform, including the encounter tilt, scale and native orbit.
+	var point := Vector3(13.5, 0.3, 0)
+	match family:
+		"beam": point = Vector3(13.3, 0, 0)
+		"defense": point = Vector3(11.1, 2.4, 0)
+		"anti_drone": point = Vector3(12.8, 1.1, -3.0)
+	if mark_two and family in ["combat", "defense"]:
+		point.z = (-1.0 if projectile_id.hash() % 2 == 0 else 1.0) * (1.8 if family == "combat" else 1.5)
+	return to_global(point * UNIT)
+
+
+func present_fire() -> void:
+	# This is called only for an actual native DRONE_FIRE record.
+	fire_flash = 0.13
+	emitter.material_override = _glow_material(emitter_color, 1.5)
 
 
 func _body_blocks(mark_two: bool) -> Array:
@@ -142,6 +176,12 @@ func _body_blocks(mark_two: bool) -> Array:
 				blocks.append(_b(side * 2.7, 1.0, 0, 1.8, 2.0, 5.5, DARK))
 				for z in [-1.8, 0.0, 1.8]: blocks.append(_b(side * 3.7, 1.0, z, 0.3, 1.3, 0.7, RIM))
 		blocks.append(_b(-5.1, 3.7, -0.7, 1.4, 1.2, 2.8, STEEL))
+		# Small inset plates and stripe pixels retain the FTL steel/brass palette.
+		blocks.append(_b(0, 6.7, -2.65, 3.5, 0.55, 0.35, RIM))
+		blocks.append(_b(0, 4.1, -2.65, 1.4, 0.6, 0.35, BRASS if not armored else RED))
+		for side in [-1.0, 1.0]:
+			blocks.append(_b(side * 1.7, 9.5, -2.95, 0.45, 0.4, 0.25, RIM))
+			blocks.append(_b(side * 2.4, 6.0, 2.6, 0.65, 2.4, 0.45, SLATE))
 		if family == "ion_boarder":
 			for side in [-1.0, 1.0]:
 				blocks.append(_b(side * 2.0, 11.2, 0, 0.8, 2.0, 2.3, Color("6aa8c5")))
@@ -152,18 +192,26 @@ func _body_blocks(mark_two: bool) -> Array:
 			blocks = [_b(0, 0, 0, 8.5, 3.7, 8.5, DARK), _b(0, 1.7, 0, 5.8, 1.5, 5.8, STEEL),
 				_b(0, 2.5, 0, 3.5, 0.6, 3.5, BLACK), _b(-4.5, 0, 0, 2.2, 2.8, 2.8, STEEL)]
 			for side in [-1.0, 1.0]:
+				blocks.append(_b(side * 2.8, 2.5, 0, 0.7, 0.7, 4.8, BRASS))
+				blocks.append(_b(0, 2.5, side * 2.8, 4.8, 0.7, 0.7, RIM))
+			for side in [-1.0, 1.0]:
 				for end in [-1.0, 1.0]:
 					blocks.append(_b(side * 4.8, -0.5, end * 4.2, 2.0, 1.3, 3.2, STEEL))
 					blocks.append(_b(side * 5.2, -2.5, end * 5.4, 1.1, 3.2, 1.1, BRASS))
 					blocks.append(_b(side * 4.7, -4.0, end * 5.4, 2.1, 0.7, 1.3, DARK))
+					blocks.append(_b(side * 5.1, -2.5, end * 6.0, 0.8, 2.1, 0.3, RIM))
 		"shield":
-			blocks = [_b(0, -0.6, 0, 6.0, 3.0, 6.0, DARK), _b(0, 1.0, 0, 3.0, 1.0, 3.0, STEEL)]
+			# Stepped, open quadrants read as a compact generator ring in stereo.
+			blocks = [_b(0, -0.6, 0, 6.0, 3.0, 6.0, DARK), _b(0, 1.0, 0, 3.0, 1.0, 3.0, STEEL),
+				_b(0, 1.7, 0, 1.7, 0.4, 1.7, BRASS)]
 			for side in [-1.0, 1.0]:
 				blocks.append(_b(0, 0, side * 6.2, 7.2, 2.0, 4.2, STEEL))
 				blocks.append(_b(side * 6.2, 0, 0, 4.2, 2.0, 7.2, STEEL))
 				blocks.append(_b(0, 1.1, side * 6.2, 5.0, 0.5, 2.8, DARK))
 				blocks.append(_b(side * 6.2, 1.1, 0, 2.8, 0.5, 5.0, DARK))
-				blocks.append(_b(side * 4.7, -1.0, side * 4.7, 2.8, 0.8, 2.8, BRASS))
+				for other in [-1.0, 1.0]:
+					blocks.append(_b(side * 4.7, -1.0, other * 4.7, 2.8, 0.8, 2.8, BRASS))
+					blocks.append(_b(side * 4.6, 0.2, other * 4.6, 1.5, 1.3, 1.5, DARK))
 		"boarding":
 			blocks = [_b(-1, 0, 0, 13.0, 5.0, 7.0, STEEL), _b(4.7, 0, 0, 5.0, 4.0, 6.0, DARK),
 				_b(7.7, 0, 0, 1.2, 3.0, 4.0, BRASS), _b(-6.0, 0, 0, 2.0, 6.0, 8.5, DARK),
@@ -172,23 +220,50 @@ func _body_blocks(mark_two: bool) -> Array:
 				blocks.append(_b(-2.0, -0.5, side * 4.6, 8.0, 1.0, 2.4, DARK))
 				blocks.append(_b(-6.6, 0, side * 2.5, 2.5, 2.5, 2.4, STEEL))
 				blocks.append(_b(3.5, 0, side * 3.4, 0.7, 4.0, 1.0, BRASS))
+				blocks.append(_b(-1, 1.0, side * 3.65, 8.7, 1.0, 0.4, RED))
+				for x in [-4.0, -1.5, 1.0]:
+					blocks.append(_b(x, 2.95, side * 2.1, 0.7, 0.5, 1.0, DARK))
+			blocks.append(_b(6.6, 2.1, 0, 1.0, 0.5, 4.7, RIM))
+		"anti_drone":
+			# Narrow angular interceptor, distinct from the defense turret.
+			blocks = [_b(-2.0, -0.7, 0, 11.0, 2.8, 5.5, DARK), _b(-2.7, 0.8, 0, 8.5, 2.2, 5.0, STEEL),
+				_b(-3.0, 2.1, 0, 5.0, 0.5, 3.5, RIM), _b(2.0, 0.4, 0, 4.0, 1.3, 3.0, BRASS)]
+			for side in [-1.0, 1.0]:
+				blocks.append(_b(-3.4, -0.2, side * 4.8, 9.0, 2.0, 2.2, STEEL))
+				blocks.append(_b(-7.7, -0.2, side * 4.8, 1.0, 1.6, 1.8, BLACK))
+				blocks.append(_b(5.5, 1.1, side * 3.0, 12.3, 1.4, 1.3, DARK))
+				blocks.append(_b(9.0, 1.1, side * 3.0, 2.0, 2.0, 1.9, STEEL))
+				blocks.append(_b(11.8, 1.1, side * 3.0, 1.0, 2.0, 2.0, RIM))
+				blocks.append(_b(-1.0, 2.0, side * 4.8, 1.3, 0.6, 1.7, BRASS))
 		_:
-			blocks = [_b(-1.5, -1.4, 0, 12.0, 2.0, 8.0, DARK), _b(-1.0, 0, 0, 11.0, 3.8, 7.0, STEEL),
-				_b(-2.2, 2.2, 0, 6.0, 1.1, 5.0, RIM), _b(-6.5, 0, 0, 2.0, 3.0, 6.5, DARK)]
+			# Pixel-sized steps and inset dark seams give the armor an FTL sprite
+			# silhouette instead of one uniform cuboid, with one batched body mesh.
+			blocks = [_b(-1.8, -1.4, 0, 10.8, 1.6, 7.0, DARK), _b(-1.5, -0.2, 0, 11.0, 2.6, 7.0, SLATE),
+				_b(-2.0, 1.1, 0, 8.8, 1.4, 6.4, STEEL), _b(-2.4, 2.1, 0, 6.0, 0.6, 5.0, RIM),
+				_b(-6.5, 0, 0, 2.0, 3.0, 6.5, DARK), _b(3.5, 0.4, 0, 2.0, 1.5, 5.1, STEEL),
+				_b(-0.8, 2.5, 0, 1.0, 0.4, 3.4, DARK), _b(-4.4, 2.5, 0, 0.6, 0.4, 3.6, BRASS)]
 			for side in [-1.0, 1.0]:
 				blocks.append(_b(-2.8, -0.7, side * 4.4, 7.6, 1.1, 3.0, DARK))
 				blocks.append(_b(-4.5, -0.3, side * 5.4, 6.4, 2.6, 3.0, STEEL))
 				blocks.append(_b(-7.4, -0.3, side * 5.4, 1.0, 2.2, 2.6, BLACK))
 				blocks.append(_b(-2.5, 1.2, side * 5.4, 1.0, 0.5, 2.8, BRASS))
+				blocks.append(_b(-4.4, 1.2, side * 5.4, 1.5, 0.5, 2.2, RIM))
+				blocks.append(_b(0.6, -0.6, side * 4.3, 1.5, 0.8, 1.1, STEEL))
 				for x in [-4.2, -2.8, -1.4]: blocks.append(_b(x, 1.5, side * 2.6, 0.5, 0.5, 1.1, DARK))
 			match family:
 				"beam":
-					blocks.append(_b(5.4, 0, 0, 10.0, 2.0, 4.5, DARK))
+					blocks.append(_b(5.4, 0, 0, 10.0, 2.0, 6.0 if mark_two else 4.5, DARK))
 					for side in [-1.0, 1.0]:
-						blocks.append(_b(9.0, 0, side * 2.9, 7.0, 2.5, 1.3, BRASS))
-						blocks.append(_b(12.0, 0, side * 2.9, 1.0, 3.2, 1.8, RIM))
+						var rail_z: float = side * (3.7 if mark_two else 2.9)
+						blocks.append(_b(9.0, 0, rail_z, 7.0, 2.5, 1.3, BRASS))
+						blocks.append(_b(12.0, 0, rail_z, 1.0, 3.2, 1.8, RIM))
+						blocks.append(_b(7.2, 1.5, rail_z, 1.0, 0.6, 1.8, STEEL))
 					blocks.append(_b(3.1, 1.4, 0, 2.5, 0.8, 4.0, BRASS))
-				"defense", "anti_drone":
+					blocks.append(_b(12.4, 0, 0, 0.64, 1.8, 6.0 if mark_two else 4.5, BLACK))
+					if mark_two:
+						blocks.append(_b(1.2, 3.0, 0, 3.0, 1.0, 4.6, STEEL))
+						blocks.append(_b(1.2, 3.7, 0, 2.0, 0.4, 3.6, BRASS))
+				"defense":
 					blocks.append(_b(1.3, 2.0, 0, 5.8, 2.0, 5.8, DARK))
 					blocks.append(_b(1.3, 3.1, 0, 4.2, 0.6, 4.2, STEEL))
 					for z in ([-1.5, 1.5] if mark_two else [0.0]):
@@ -197,14 +272,21 @@ func _body_blocks(mark_two: bool) -> Array:
 					for side in [-1.0, 1.0]:
 						blocks.append(_b(-1.5, 0, side * 8.0, 9.0, 0.8, 2.0, BRASS))
 						blocks.append(_b(-4.7, 2.0, side * 5.4, 0.5, 4.0, 0.5, DARK))
-					if family == "anti_drone":
-						blocks.append(_b(4.5, 1.7, -4.2, 7.0, 1.0, 1.0, BRASS))
-						blocks.append(_b(4.5, 1.7, 4.2, 7.0, 1.0, 1.0, BRASS))
+						blocks.append(_b(-4.7, 4.2, side * 5.4, 1.5, 0.5, 1.5, RIM))
+					if mark_two:
+						blocks.append(_b(1.3, 4.0, 0, 3.0, 1.0, 3.0, RIM))
+						blocks.append(_b(1.3, 4.65, 0, 2.0, 0.3, 2.0, SLATE))
 				_:
 					for z in ([-1.8, 1.8] if mark_two else [0.0]):
 						blocks.append(_b(7.3, 0.3, z, 10.5, 2.0, 2.0, DARK))
 						blocks.append(_b(11.7, 0.3, z, 1.4, 3.0, 3.0, RIM))
+						blocks.append(_b(12.6, 0.3, z, 0.64, 2.0, 2.0, BLACK))
 					blocks.append(_b(4.0, 0.7, 0, 1.2, 4.0, 6.0, BRASS))
+					for side in [-1.0, 1.0]:
+						blocks.append(_b(6.3, 1.6, side * (1.8 if mark_two else 0.85), 3.7, 0.6, 0.6, STEEL))
+					if mark_two:
+						blocks.append(_b(-2.0, 2.8, 0, 5.8, 0.8, 5.4, DARK))
+						blocks.append(_b(-2.0, 3.4, 0, 4.8, 0.4, 4.4, STEEL))
 	return blocks
 
 
@@ -212,15 +294,21 @@ func set_live(data: Dictionary) -> void:
 	live_data = data
 	visible = not bool(data.get("dead", false)) and (bool(data.get("deployed", false)) or not is_space)
 	var powered := bool(data.get("powered", true))
-	firing = bool(data.get("firing", false)) if is_space else bool(data.get("fighting", false))
+	var native_firing := bool(data.get("firing", false)) if is_space else bool(data.get("fighting", false))
+	if native_firing and not firing and is_space:
+		present_fire()
+	firing = native_firing
 	thruster.visible = is_space and visible and powered
 	emitter.visible = visible and powered
-	var material: StandardMaterial3D = emitter.material_override
-	material.emission_energy_multiplier = 1.5 if firing else 0.25
+	emitter.material_override = _glow_material(emitter_color, 1.5 if firing or fire_flash > 0.0 else 0.25)
 
 
 func animate(delta: float) -> void:
 	animation_time += delta
+	fire_flash = maxf(0.0, fire_flash - delta)
+	if is_space:
+		body.position.x = -0.008 * (fire_flash / 0.13)
+		emitter.material_override = _glow_material(emitter_color, 1.5 if firing or fire_flash > 0.0 else 0.25)
 	if thruster.visible:
 		thruster.scale.x = 0.88 + sin(animation_time * 28.0) * 0.12
 	if tool != null:
@@ -231,16 +319,38 @@ func animate(delta: float) -> void:
 			tool.rotation.x = 0.55 + sin(animation_time * 11.0) * 0.35
 
 
-func _glow_mesh(blocks: Array, color: Color) -> MeshInstance3D:
+func _cached_part(key: String, blocks: Array) -> MeshInstance3D:
+	if not detail_meshes.has(key):
+		var source := Voxels.make(blocks)
+		detail_meshes[key] = source.mesh
+		source.free()
+	var node := MeshInstance3D.new()
+	node.mesh = detail_meshes[key]
+	node.material_override = body_material
+	return node
+
+
+func _glow_mesh(key: String, blocks: Array, color: Color) -> MeshInstance3D:
 	# Interior robots have no exhaust; keep a harmless hidden mesh for the
 	# shared animation interface rather than creating an empty surface.
 	if blocks.is_empty(): blocks = [_b(0, 0, 0, 0.1, 0.1, 0.1, color)]
-	var node := Voxels.make(blocks)
-	var material: StandardMaterial3D = node.material_override
+	var node := _cached_part(key, blocks)
+	node.material_override = _glow_material(color, 1.5)
+	return node
+
+
+func _glow_material(color: Color, energy: float) -> StandardMaterial3D:
+	var key := color.to_html() + ":" + str(energy)
+	if glow_materials.has(key):
+		return glow_materials[key]
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 0.88
 	material.emission_enabled = true
 	material.emission = color
-	material.emission_energy_multiplier = 1.5
-	return node
+	material.emission_energy_multiplier = energy
+	glow_materials[key] = material
+	return material
 
 
 func _b(x: float, y: float, z: float, w: float, h: float, d: float, color: Color) -> Array:

@@ -1,5 +1,16 @@
 # Changelog
 
+## Targeting, jump and drone refinements — source update, 2026-10-03
+
+- Display the player's native placed weapon targets as persistent numbered room locks, red for a single volley and yellow for autofire. Preserve real beam endpoints/direction and native flak radius; keep marks attached during pause and encounter transforms, and clear them when native targets or the encounter end.
+- Stretch surrounding stars along the player ship's bow only while FTL reports an actual jump. Restore normal stars on arrival and arrival-dialog opening.
+- Reset each action-wheel opening to the weapons/drones category; event dialogs retain their choice wheel.
+- Refine procedural drone armor and family silhouettes, distinguish Combat/Beam/Defense Mk II variants, and reuse immutable meshes/materials. Native drone bullets leave visible muzzles in their current render space; their launch point stays fixed as the drone moves, while continuing beams remain connected to the emitter.
+- Make the native intruder warning's backdrop transparent within its HUD region, retaining the warning glyphs, faint shadow/fringe coverage and neighboring controls.
+- Import eight owner-local placed-target PNGs for slots 1–4 and their yellow/autofire variants. Existing installations must rerun [asset extraction](docs/INSTALLATION.md#5-extract-local-presentation-assets) with the current extractor against their original owned archive.
+
+Verification: 44 Python tests, eleven Godot suites and inspected Vulkan target/jump/drone fixtures pass. Twelve actual native warning blink captures preserve glyphs and ordinary HUD ink while correcting the dark fringes. A fresh copied profile verifies actual room targeting/clearing/autofire and a real connected-beacon jump through its arrival dialog. Production saves and executable fingerprints are preserved. These checks make no new physical Steam Frame or stereo-performance claim.
+
 ## HUD clearance and menu correction — source update, 2026-10-03
 
 - Reduce the HUD's collision clearance above the ship/shield from 14 cm to 8 cm. Headset-following priority is unchanged.

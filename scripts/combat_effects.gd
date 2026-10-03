@@ -6,6 +6,8 @@ const MISS_CUE_DURATION := 1.0
 const MAX_MISS_CUES := 24
 static var impact_meshes: Dictionary = {}
 static var glow_materials: Dictionary = {}
+static var projectile_meshes: Dictionary = {}
+static var solid_materials: Dictionary = {}
 
 var shots: Array[Dictionary] = []
 var impacts: Array[Dictionary] = []
@@ -22,8 +24,13 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 	if event.has("target_space") and int(event["target_space"]) == int(sender.get("enemy")):
 		receiver = sender
 	var start: Vector3 = sender.weapon_origin(int(event.get("weapon_slot", 0)))
-	if event.has("origin_point"):
-		start = origin_ship.to_global(origin_ship.pixel_point(event["origin_point"]))
+	var drone_id := str(event.get("drone_id", ""))
+	var drone: Node3D = _drone(origin_ship, drone_id)
+	if drone != null:
+		start = drone.muzzle_position(str(event.get("projectile_id", "")))
+		drone.present_fire()
+	elif event.has("origin_point"):
+		start = origin_ship.to_global(origin_ship.pixel_point(event["origin_point"], 0.3 if not drone_id.is_empty() else 0.18))
 	var end: Vector3 = receiver.room_target(int(event.get("target_room", 0)))
 	if event.has("target") and not event["target"].is_empty():
 		end = receiver.to_global(receiver.pixel_point(event["target"]))
@@ -37,7 +44,10 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 		color = Color(0.9, 0.9, 0.85)
 	elif kind == "asteroid":
 		color = Color(0.4, 0.42, 0.45)
-	var node := _projectile_visual(kind, color)
+	var drone_family := str(drone.family) if drone != null else ""
+	if kind == "laser" and drone_family in ["defense", "anti_drone"]:
+		color = Color("98e5aa") if drone_family == "defense" else Color("a9dfe9")
+	var node := _projectile_visual(kind, color, not drone_id.is_empty())
 	add_child(node)
 	node.global_position = start
 	var duration := maxf(0.01, float(event.get("duration", 0.7)))
@@ -53,10 +63,11 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 	shots.append({"node": node, "start": start, "end": end, "beam_end": beam_end,
 		"projectile_id": str(event.get("projectile_id", "")), "sender": sender,
 		"created_ms": Time.get_ticks_msec(), "native_present": false,
-		"visual_scale": maxf(0.1, sender.global_basis.get_scale().abs().x),
+		"visual_scale": maxf(0.1, (origin_ship if not drone_id.is_empty() else sender).global_basis.get_scale().abs().x),
 		"live_progress": 0.0, "wanted_progress": 0.0, "missed": false, "miss_feedback": false,
 		"end_point": event.get("end_point", {}),
 		"origin_point": event.get("origin_point", {}), "origin_ship": origin_ship,
+		"drone_id": drone_id, "launch_point": origin_ship.to_local(start),
 		"target_point": event.get("target", {}), "beam_point": {},
 		"slot": int(event.get("weapon_slot", 0)), "room": int(event.get("target_room", 0)),
 		"time": 0.0, "duration": duration, "kind": kind, "outcome": outcome, "receiver": receiver})
@@ -81,10 +92,9 @@ func _process(delta: float) -> void:
 		if age >= 1.0:
 			label.queue_free()
 			misses.remove_at(i)
-	if simulation_paused:
-		return
 	for i in range(impacts.size() - 1, -1, -1):
-		impacts[i]["time"] += delta
+		if not simulation_paused:
+			impacts[i]["time"] += delta
 		var flash: MeshInstance3D = impacts[i]["node"]
 		var age := float(impacts[i]["time"]) / 0.22
 		flash.scale = Vector3.ONE * maxf(0.01, 1.0 - age)
@@ -96,11 +106,18 @@ func _process(delta: float) -> void:
 			impacts.remove_at(i)
 	for i in range(shots.size() - 1, -1, -1):
 		var shot: Dictionary = shots[i]
-		shot["time"] += delta
+		if not simulation_paused:
+			shot["time"] += delta
 		# Recompute endpoints after the user moves/rotates/scales the encounter.
-		shot["visual_scale"] = maxf(0.1, shot["sender"].global_basis.get_scale().abs().x)
-		shot["start"] = shot["sender"].weapon_origin(shot["slot"])
-		if not shot["origin_point"].is_empty():
+		shot["visual_scale"] = maxf(0.1, (shot["origin_ship"] if not shot["drone_id"].is_empty() else shot["sender"]).global_basis.get_scale().abs().x)
+		if not shot["drone_id"].is_empty():
+			# Moving an orbiting drone cannot drag the launch point of a bullet.
+			# A continuing beam is the one native effect attached to its emitter.
+			var drone: Node3D = _drone(shot["origin_ship"], shot["drone_id"])
+			shot["start"] = drone.muzzle_position(shot["projectile_id"]) if shot["kind"] == "beam" and drone != null else shot["origin_ship"].to_global(shot["launch_point"])
+		else:
+			shot["start"] = shot["sender"].weapon_origin(shot["slot"])
+		if shot["drone_id"].is_empty() and not shot["origin_point"].is_empty():
 			shot["start"] = shot["origin_ship"].to_global(shot["origin_ship"].pixel_point(shot["origin_point"]))
 		if shot["outcome"] == "pending":
 			shot["end"] = shot["receiver"].room_target(shot["room"])
@@ -112,10 +129,9 @@ func _process(delta: float) -> void:
 				shot["beam_end"] = shot["receiver"].to_global(shot["receiver"].pixel_point(shot["end_point"]))
 		var progress := clampf(float(shot["time"]) / float(shot["duration"]), 0.0, 1.0)
 		if shot["outcome"] == "pending":
-			shot["live_progress"] = lerpf(shot["live_progress"], shot["wanted_progress"], minf(1.0, delta * 20.0))
+			if not simulation_paused:
+				shot["live_progress"] = lerpf(shot["live_progress"], shot["wanted_progress"], minf(1.0, delta * 20.0))
 			progress = shot["live_progress"]
-			if shot["time"] > 20.0:
-				progress = 1.0
 		var node: MeshInstance3D = shot["node"]
 		if shot["kind"] == "beam":
 			var beam_target: Vector3 = Vector3(shot["end"]).lerp(shot["beam_end"], progress)
@@ -130,15 +146,15 @@ func _process(delta: float) -> void:
 			node.position = Vector3.ZERO
 			# Keep the precise native sweep line, then surround it with real 3D
 			# cylinders so its width remains visible in stereo at oblique angles.
-			_segment(node.get_node("BeamCore"), shot["start"], beam_target, 0.012 * shot["visual_scale"])
-			_segment(node.get_node("BeamGlow"), shot["start"], beam_target, 0.032 * shot["visual_scale"])
+			_segment(node.get_node("BeamCore"), shot["start"], beam_target, (0.007 if not shot["drone_id"].is_empty() else 0.012) * shot["visual_scale"])
+			_segment(node.get_node("BeamGlow"), shot["start"], beam_target, (0.018 if not shot["drone_id"].is_empty() else 0.032) * shot["visual_scale"])
 		elif shot["kind"] != "bomb":
 			node.global_position = Vector3(shot["start"]).lerp(shot["end"], progress)
 			var direction: Vector3 = Vector3(shot["end"]) - Vector3(shot["start"])
 			if direction.length_squared() > 0.000001:
 				var up := Vector3.RIGHT if absf(direction.normalized().dot(Vector3.UP)) > 0.98 else Vector3.UP
 				node.global_basis = Basis.looking_at(direction.normalized(), up).scaled(Vector3.ONE * shot["visual_scale"])
-		if progress >= 1.0:
+		if progress >= 1.0 and shot["outcome"] != "pending":
 			if shot["outcome"] == "shield":
 				shot["receiver"].flash_shield()
 			if shot["outcome"] not in ["miss", "pending"]:
@@ -294,7 +310,16 @@ func _miss_feedback(point: Vector3, receiver: Node3D, projectile_id: String) -> 
 		"time": 0.0, "projectile_id": projectile_id})
 
 
-func _projectile_visual(kind: String, color: Color) -> MeshInstance3D:
+func _drone(ship: Node3D, drone_id: String) -> Node3D:
+	if drone_id.is_empty() or (drone_id.is_valid_int() and drone_id.to_int() < 0):
+		return null
+	var nodes: Variant = ship.get("drone_nodes")
+	if nodes is Dictionary and nodes.has(drone_id) and is_instance_valid(nodes[drone_id]):
+		return nodes[drone_id]
+	return null
+
+
+func _projectile_visual(kind: String, color: Color, drone_shot: bool = false) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.material_override = _glow(color)
@@ -315,17 +340,17 @@ func _projectile_visual(kind: String, color: Color) -> MeshInstance3D:
 				cylinder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				node.add_child(cylinder)
 		"missile":
-			var body := BoxMesh.new()
-			body.size = Vector3(0.075, 0.065, 0.19)
-			node.mesh = body
+			node.mesh = _box_mesh(Vector3(0.075, 0.065, 0.19))
 			node.material_override = _solid(Color(0.72, 0.76, 0.79))
 			var nose := MeshInstance3D.new()
-			var pyramid := CylinderMesh.new()
-			pyramid.top_radius = 0.0
-			pyramid.bottom_radius = 0.052
-			pyramid.height = 0.072
-			pyramid.radial_segments = 4
-			nose.mesh = pyramid
+			if not projectile_meshes.has("missile_nose"):
+				var pyramid := CylinderMesh.new()
+				pyramid.top_radius = 0.0
+				pyramid.bottom_radius = 0.052
+				pyramid.height = 0.072
+				pyramid.radial_segments = 4
+				projectile_meshes["missile_nose"] = pyramid
+			nose.mesh = projectile_meshes["missile_nose"]
 			nose.position.z = -0.128
 			nose.rotation.x = -PI / 2.0
 			nose.material_override = _solid(Color(0.73, 0.17, 0.08))
@@ -338,51 +363,64 @@ func _projectile_visual(kind: String, color: Color) -> MeshInstance3D:
 			exhaust.position.z = 0.145
 			node.add_child(exhaust)
 		"ion":
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.052
-			sphere.height = 0.104
-			sphere.radial_segments = 10
-			sphere.rings = 5
-			node.mesh = sphere
+			var ion_radius := 0.032 if drone_shot else 0.052
+			var ion_key := "drone_ion" if drone_shot else "ion"
+			if not projectile_meshes.has(ion_key):
+				var sphere := SphereMesh.new()
+				sphere.radius = ion_radius
+				sphere.height = ion_radius * 2.0
+				sphere.radial_segments = 8
+				sphere.rings = 4
+				projectile_meshes[ion_key] = sphere
+			node.mesh = projectile_meshes[ion_key]
 			for axis in [0, 1]:
 				var ring := MeshInstance3D.new()
-				var torus := TorusMesh.new()
-				torus.inner_radius = 0.066
-				torus.outer_radius = 0.078
-				torus.rings = 12
-				torus.ring_segments = 4
-				ring.mesh = torus
+				if not projectile_meshes.has(ion_key + "_ring"):
+					var torus := TorusMesh.new()
+					torus.inner_radius = ion_radius * 1.27
+					torus.outer_radius = ion_radius * 1.5
+					torus.rings = 12
+					torus.ring_segments = 4
+					projectile_meshes[ion_key + "_ring"] = torus
+				ring.mesh = projectile_meshes[ion_key + "_ring"]
 				ring.rotation.x = PI / 2.0 if axis == 0 else 0.0
 				ring.material_override = _glow(Color(0.15, 0.6, 1.0, 0.6), true)
 				ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				node.add_child(ring)
 		"asteroid":
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.2
-			sphere.height = 0.34
-			sphere.radial_segments = 7
-			sphere.rings = 4
-			node.mesh = sphere
+			if not projectile_meshes.has("asteroid"):
+				var sphere := SphereMesh.new()
+				sphere.radius = 0.2
+				sphere.height = 0.34
+				sphere.radial_segments = 7
+				sphere.rings = 4
+				projectile_meshes["asteroid"] = sphere
+			node.mesh = projectile_meshes["asteroid"]
 			node.material_override = _solid(color)
 		_:
-			var core := BoxMesh.new()
-			core.size = Vector3(0.028, 0.028, 0.26)
-			node.mesh = core
+			node.mesh = _box_mesh(Vector3(0.020, 0.020, 0.09) if drone_shot else Vector3(0.028, 0.028, 0.26))
 			node.material_override = _glow(Color(1.0, 0.93, 0.72))
-			var trail := _box(Vector3(0.066, 0.066, 0.39), Color(color, 0.27))
-			trail.position.z = 0.07
+			var trail := _box(Vector3(0.042, 0.042, 0.16) if drone_shot else Vector3(0.066, 0.066, 0.39), Color(color, 0.27))
+			trail.position.z = 0.038 if drone_shot else 0.07
 			node.add_child(trail)
 	return node
 
 
 func _box(size: Vector3, color: Color, luminous: bool = true) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	node.mesh = mesh
+	node.mesh = _box_mesh(size)
 	node.material_override = _glow(color, color.a < 1.0) if luminous else _solid(color)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return node
+
+
+func _box_mesh(size: Vector3) -> BoxMesh:
+	var key := "box:" + str(size)
+	if not projectile_meshes.has(key):
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		projectile_meshes[key] = mesh
+	return projectile_meshes[key]
 
 
 func _glow(color: Color, additive: bool = false) -> StandardMaterial3D:
@@ -402,9 +440,13 @@ func _glow(color: Color, additive: bool = false) -> StandardMaterial3D:
 
 
 func _solid(color: Color) -> StandardMaterial3D:
+	var key := color.to_html()
+	if solid_materials.has(key):
+		return solid_materials[key]
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.82
+	solid_materials[key] = material
 	return material
 
 

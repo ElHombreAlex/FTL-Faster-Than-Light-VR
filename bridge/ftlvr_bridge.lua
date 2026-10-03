@@ -261,6 +261,15 @@ local function ship_snapshot(ship, gui)
             num_shots=weapon.numShots,shots_fired=weapon.shotsFiredAtTarget,queued_shots=weapon.queuedProjectiles:size(),
             sub_charge=weapon.subCooldown.first,sub_cooldown=weapon.subCooldown.second,
             muzzle=point(weapon.weaponVisual.fireLocation), firing=weapon.weaponVisual.bFiring}
+		-- Display the player's real placed aiming marks, never an enemy's intent.
+		if ship.iShipId==0 then
+			local row=result.weapons[#result.weapons]
+			row.targets={}
+			for n=0,weapon.targets:size()-1 do row.targets[#row.targets+1]=point(weapon.targets[n]) end
+			row.target_ship=weapon.targetId
+			row.target_radius=weapon.radius
+			row.beam_length=weapon.blueprint.length
+		end
     end
     return result
 end
@@ -275,6 +284,7 @@ local function snapshot()
     if app.menu.bOpen or not state.ready then state.ui_mode='menu' end
     state.ship_builder_open=app.menu.shipBuilder.bOpen
     state.event_pending = gui.event_pause and not gui.choiceBoxOpen
+    state.jumping = player and player.bJumping or false
     state.transition = state.event_pending or (player and player.bJumping or false)
     if state.ui_mode~='menu' and gui.menu_pause and not gui.choiceBoxOpen and not state.transition then state.ui_mode='screen' end
     state.event_open = gui.choiceBoxOpen

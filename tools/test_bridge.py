@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 import numpy as np
-from hud_alpha import clear_world_alpha
+from hud_alpha import clear_world_alpha, clear_supplemental_hud_alpha
 from run_bridge import (decode_state_line, translate_command, full_screen_capture,
                         remove_enemy_hud, native_window_frame, remove_pause_overlay,
                         FRAME_HEADER, raw_frame_bytes, FramePublisher)
@@ -213,11 +213,58 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(result[9,12,3],255)
         self.assertTrue(np.array_equal(result[:,:,:3],pixels[:,:,:3]))
 
+    def test_supplemental_warning_keeps_text_and_native_faint_shadow_coverage(self):
+        pixels=np.zeros((720,1280,4),dtype=np.uint8)
+        # Native warning glyphs with a barely visible red-black texture fringe.
+        pixels[210:270,675:785]=[1,0,0,2]
+        pixels[215:223,690:770]=[86,18,10,43]
+        pixels[235:243,683:777]=[86,18,10,43]
+        pixels[255:263,683:777]=[86,18,10,43]
+        result=clear_supplemental_hud_alpha(pixels)
+        self.assertEqual(result[212,680,3],2,'Warning shadow must retain its faint native alpha')
+        self.assertEqual(result[218,700,3],255,'Native warning text must retain its existing visibility')
+        self.assertTrue(np.array_equal(result[:,:,:3],pixels[:,:,:3]))
+
+    def test_supplemental_warning_fade_and_scaled_native_capture(self):
+        pixels=np.zeros((720,1280,4),dtype=np.uint8)
+        pixels[210:270,675:785]=[1,0,0,1]
+        pixels[216:222,690:770]=[20,4,2,1]
+        for sample in (pixels,pixels[::2,::2]):
+            result=clear_supplemental_hud_alpha(sample)
+            scale=pixels.shape[0]//sample.shape[0]
+            self.assertEqual(result[212//scale,680//scale,3],1)
+            self.assertEqual(result[218//scale,700//scale,3],255,'Faded warning glyph RGB must not be multiplied by raw alpha twice')
+            self.assertTrue(np.array_equal(result[:,:,:3],sample[:,:,:3]))
+
+    def test_supplemental_warning_conversion_preserves_controls_and_normal_frames(self):
+        pixels=np.zeros((720,1280,4),dtype=np.uint8)
+        pixels[15:65,15:200,:3]=[125,180,190]
+        pixels[25:55,25:190,:3]=0
+        pixels[620:690,295:700,:3]=[125,180,190]
+        pixels[632:678,307:688,:3]=0
+        pixels[212:222,345:355]=[1,0,0,2]
+        pixels[190:200,610:760]=[1,0,0,2]
+        pixels[195:198,640:690]=[150,180,190,255]
+        expected=clear_world_alpha(pixels)
+        result=clear_supplemental_hud_alpha(pixels)
+        self.assertTrue(np.array_equal(result,expected),'A normal HUD must keep the legacy control alpha')
+        self.assertEqual(result[40,70,3],255,'Black ink inside top controls must remain opaque')
+        self.assertEqual(result[650,640,3],255,'Black weapon panel ink must remain opaque')
+
     def test_empty_lua_vectors_become_arrays(self):
         state=decode_state_line('FTLVR_STATE '+json.dumps({'protocol':2,'source':'hyperspace',
             'shots':{},'projectiles':{},'player':{'rooms':{},'crew':{},'weapons':{}}}))
         self.assertEqual(state['player']['crew'],[])
         self.assertEqual(state['shots'],[])
+
+    def test_native_target_points_survive_empty_lua_vectors(self):
+        targets=[{'x':102,'y':134},{'x':177,'y':134}]
+        raw={'protocol':2,'source':'hyperspace','player':{'weapons':[
+            {'slot':0,'targets':{},'target_ship':1},
+            {'slot':1,'targets':targets,'target_ship':1}]}}
+        state=decode_state_line('FTLVR_STATE '+json.dumps(raw))
+        self.assertEqual(state['player']['weapons'][0]['targets'],[])
+        self.assertEqual(state['player']['weapons'][1]['targets'],targets)
 
     def test_native_room_target_includes_enemy_screen_offset(self):
         state={'ready':True,'ui_mode':'game','combat':True,'weapon_selected':1,

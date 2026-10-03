@@ -55,11 +55,13 @@ The game decides whether a change is allowed. One engine step changes one power 
 
 Enemy inspection reveals room roles; it does not reveal crew or hazards that FTL's sensors hide.
 
+After a weapon target is placed, its native numbered mark stays on the room even when the targeting cursor closes. The number identifies the weapon slot: red marks indicate a single volley and yellow marks native autofire. Beam marks show both endpoints and the real sweep direction; flak marks include the native spread area. These marks remain attached while paused or while the table is moved, and disappear when the game clears the target or the encounter ends. They display your placed targets without revealing enemy weapon intent or hidden crew/system information.
+
 ## Shortcut wheel and event choices
 
 Hold the **right bumper**, move the right stick toward a slot and release the bumper to activate it. Returning the stick to the center cancels. Right trigger confirms immediately; B cancels. Right A changes the category.
 
-The wheel starts with weapon slots 1–4 and drone slots 5–8. Equipped weapons/drones show their native localized names; weapon-family silhouettes and ammo captions distinguish similar equipment. Long names are clipped inside their sector, with a wider selected-name caption below. Numbers remain the original native shortcuts. Other categories provide system power and system actions. Uninstalled or unavailable entries cannot activate. When a choice event is open, the wheel becomes a choice selector for entries 1–8; original dialog controls remain pointable.
+Every normal wheel opening starts with weapon slots 1–4 and drone slots 5–8. Changing category with right A applies to that opening; the next opening returns to weapons/drones. Equipped weapons/drones show their native localized names; weapon-family silhouettes and ammo captions distinguish similar equipment. Long names are clipped inside their sector, with a wider selected-name caption below. Numbers remain the original native shortcuts. Other categories provide system power and system actions. Uninstalled or unavailable entries cannot activate. When a choice event is open, the wheel becomes a choice selector for entries 1–8; original dialog controls remain pointable.
 
 Shift and Ctrl also apply when confirming relevant wheel or shortcut commands.
 
@@ -82,9 +84,13 @@ These are native key equivalents shown on buttons, not extra physical controller
 
 **Jump** opens the actual sector map above and ahead of the installed piloting room. Point at a beacon using the right controller and use the original confirmation controls. The map follows the ship's cockpit and orientation. **Close Map** returns to the encounter.
 
+During an actual native jump, surrounding stars stretch along your ship's bow. Turning your head does not change the travel direction. Arrival restores normal stars, including when the arrival dialog opens. Opening the map or charging FTL alone does not start the stretch.
+
 Events, Store (including BUY/SELL), upgrades, crew and equipment windows float above the player ship. Their original localized controls stay interactive. Main menus remain complete, head-relative 2D views.
 
 Gameplay uses a **compact HUD anchored to the headset**, retaining native upper status and the crew roster while removing the lower weapons/reactor/system/subsystem strip. Use Power, Shortcuts or the wheel for those lower-strip actions. The HUD keeps a fixed readable size and follows the headset whenever there is room. If that movement would carry the panel into the ship or shield, it stops 8 cm above the ship until clearance permits headset-relative placement again. A raised or oversized table can therefore raise the panel during overlap. The hand panel retains visual and pointing priority where it overlaps the HUD. Ship, shop, pause-menu and Options windows opened during a run appear only above the ship; point at that floating panel to use them. Initial/hangar menus and desktop Tactical/map inspection keep the complete native view.
+
+The native intruder warning keeps its lettering and subtle shadow/fringe on a transparent backdrop; neighboring HUD controls remain visible and pointable.
 
 To rename a ship or crew member, click its original name-edit field. A floating **QWERTY keyboard** appears:
 
