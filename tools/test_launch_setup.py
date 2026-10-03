@@ -17,7 +17,11 @@ import launch
 @unittest.skipUnless(os.name == "nt", "The live launcher is Windows only")
 class LaunchSetupTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
+        # Native Windows lookup must be able to read these fixtures too; some
+        # sandboxes grant that access in the checkout but not the user's Temp.
+        scratch = Path(__file__).resolve().parents[1] / "local_game_data/test_scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(dir=scratch)
         self.root = Path(self.temporary.name) / "FTL checkout with spaces"
         self.root.mkdir()
         self.lab = self.root / "separate lab"
@@ -117,13 +121,27 @@ class LaunchSetupTests(unittest.TestCase):
         alias = checkout / "fake LocalAppData/Microsoft/WindowsApps"
         alias.mkdir(parents=True)
         (alias / "python.exe").touch()
+        # System32 can contain a real py.exe on CI runners. Keep only the
+        # lookup utility, not that directory, on this synthetic PATH.
+        lookup = checkout / "isolated lookup tools"
+        lookup.mkdir()
+        where = lookup / "where.exe"
+        shutil.copyfile(Path(os.environ["SystemRoot"]) / "System32/where.exe", where)
         environment = dict(os.environ, FTLVR_NO_PAUSE="1", LOCALAPPDATA=str(checkout / "fake LocalAppData"),
-                           PATH=str(Path(os.environ["SystemRoot"]) / "System32") + os.pathsep + str(alias))
+                           PATH=str(lookup) + os.pathsep + str(alias))
         environment.pop("FTLVR_PYTHON", None)
-        result = subprocess.run([os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "SETUP.cmd"],
+        absent_launcher = subprocess.run([str(where), "py"], cwd=checkout, env=environment,
+                                        capture_output=True, text=True, timeout=10)
+        self.assertEqual(absent_launcher.returncode, 1, "Synthetic PATH must not expose the host's py launcher")
+        store_alias = subprocess.run([str(where), "python"], cwd=checkout, env=environment,
+                                    capture_output=True, text=True, timeout=10)
+        self.assertEqual(store_alias.returncode, 0)
+        self.assertEqual(store_alias.stdout.strip().casefold(), str(alias / "python.exe").casefold())
+        result = subprocess.run([os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "SETUP.cmd --dry-run"],
                                 cwd=checkout, env=environment, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 1)
         self.assertIn("Microsoft Store alias is not a Python installation", result.stdout)
+        self.assertFalse((checkout / ".venv").exists())
 
     def test_setup_accepts_explicit_python_and_forwards_dry_run(self):
         checkout = self.root / "explicit Python clone"
