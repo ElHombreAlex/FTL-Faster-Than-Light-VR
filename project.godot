@@ -1,0 +1,19 @@
+config_version=5
+
+[application]
+config/name="FTL Tabletop VR Prototype"
+run/main_scene="res://main.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[rendering]
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/default_filters/use_nearest_mipmap_filter=false
+
+[xr]
+openxr/enabled=true
+openxr/default_action_map="res://openxr_action_map.tres"
+shaders/enabled=true

@@ -1,0 +1,22 @@
+name: Feature or compatibility request
+description: Suggest a concrete improvement or offer to test another configuration.
+title: "[Idea] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this improve?
+      description: Describe the player situation, device or game interaction.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested change
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Hardware or testing you can provide
+      description: Optional. Include exact versions for a compatibility request.

@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.lua text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf
+
+# Keep upstream notices and their recorded SHA-256 hashes stable on checkout.
+licenses/* -text

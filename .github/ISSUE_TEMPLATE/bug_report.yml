@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible setup, gameplay, input or rendering issue.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check docs/TROUBLESHOOTING.md first. Do not attach game files, extracted assets, saves or unreviewed logs containing personal paths. Use small redacted log excerpts where useful.
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and hardware
+      description: Windows, source revision, FTL source/lab version, Hyperspace, Godot, Python, SteamVR, headset/controllers and GPU.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Where does it happen?
+      options:
+        - Live VR
+        - Live desktop
+        - Setup/preflight
+        - Synthetic demo or source tests
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the hand-screen page, buttons pressed, ship/system or encounter involved, and how often it occurs.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted logs or measurements
+      description: For performance, say whether you measured headset FPS/frame times or Tactical texture updates. For tracking, include the interaction profile if known.

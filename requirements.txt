@@ -1,0 +1,4 @@
+frida==17.9.0
+Pillow>=10
+numpy>=1.24
+capstone==5.0.9

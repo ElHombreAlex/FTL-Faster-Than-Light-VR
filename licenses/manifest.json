@@ -1,0 +1,89 @@
+{
+  "scope": "License-reference documents; dependency implementations and FTL content are not bundled.",
+  "inspected_on": "2026-10-03",
+  "documents": [
+    {
+      "file": "UNIVERSAL-MODDER-LICENSE.txt",
+      "component": "universal-modder",
+      "inspected_version": null,
+      "upstream_path": "LICENSE",
+      "source_url": "https://github.com/rehan-remade/universal-modder/blob/main/LICENSE",
+      "sha256": "db6cfa2ad2c44f73080440c866c4a3a078749d84ba40b4dfa27d50f18a525543",
+      "verbatim_copy": true
+    },
+    {
+      "file": "FRIDA-COPYING.txt",
+      "component": "Frida Python wheel",
+      "inspected_version": "17.9.0",
+      "upstream_path": "frida-17.9.0.dist-info/licenses/COPYING",
+      "source_url": "https://frida.re/",
+      "sha256": "803b8b5aa4151030221b3c3f71a645da6241938421e49901444a79e5cca75fa8",
+      "verbatim_copy": true
+    },
+    {
+      "file": "CAPSTONE-LICENSE.txt",
+      "component": "Capstone Python wheel",
+      "inspected_version": "5.0.9",
+      "upstream_path": "capstone-5.0.9.dist-info/LICENSE.TXT",
+      "source_url": "https://github.com/capstone-engine/capstone/blob/5.0.9/LICENSE.TXT",
+      "sha256": "404bd0cb0137ffb797258f844f53e5273f9b6d5781a1a359a2880411f49a4f30",
+      "verbatim_copy": true
+    },
+    {
+      "file": "PILLOW-LICENSE.txt",
+      "component": "Pillow installed distribution",
+      "inspected_version": "12.3.0",
+      "upstream_path": "pillow-12.3.0.dist-info/licenses/LICENSE",
+      "source_url": "https://github.com/python-pillow/Pillow/blob/main/LICENSE",
+      "sha256": "4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857",
+      "verbatim_copy": true
+    },
+    {
+      "file": "NUMPY-LICENSE.txt",
+      "component": "NumPy installed distribution",
+      "inspected_version": "2.3.5",
+      "upstream_path": "numpy-2.3.5.dist-info/LICENSE.txt",
+      "source_url": "https://github.com/numpy/numpy/blob/v2.3.5/LICENSE.txt",
+      "sha256": "596b953e1dcbe829b32ae444387efa15003fc6abdeca8a2179f364a6364c286e",
+      "verbatim_copy": true
+    },
+    {
+      "file": "HYPERSPACE-LICENSE.md",
+      "component": "FTL Hyperspace source",
+      "inspected_version": "1.23.2",
+      "upstream_path": "LICENSE.md",
+      "source_url": "https://github.com/FTL-Hyperspace/FTL-Hyperspace/blob/db570d728321a5a2c70add0988153373fd4ec08a/LICENSE.md",
+      "sha256": "2a8dcc1ec5d444e5e4514eaa0f5041a24630ddf3c0ed28307740a9a0efea543d",
+      "verbatim_copy": true
+    },
+    {
+      "file": "FTLMAN-LICENSE.txt",
+      "component": "ftlman source",
+      "inspected_version": "0.7.4",
+      "upstream_path": "LICENSE",
+      "source_url": "https://github.com/afishhh/ftlman/blob/7ad94795f9eff7f4bf005ea40d9bb2cf4d57ec88/LICENSE",
+      "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+      "verbatim_copy": true
+    },
+    {
+      "file": "GODOT-LICENSE.txt",
+      "component": "Godot standard Windows engine",
+      "inspected_version": "4.7.2-stable (official)",
+      "build_hash": "ed1daf0bf001b61586d9930840f2f1394092c079",
+      "extraction_method": "Engine.get_license_text()",
+      "source_url": "https://docs.godotengine.org/en/stable/about/complying_with_licenses.html",
+      "sha256": "a0acc151e87517ee3411acce58ce99e17f636921b37c158f38f0b5acafd10da2",
+      "verbatim_copy": false
+    },
+    {
+      "file": "GODOT_COPYRIGHT.txt",
+      "component": "Godot standard Windows engine",
+      "inspected_version": "4.7.2-stable (official)",
+      "build_hash": "ed1daf0bf001b61586d9930840f2f1394092c079",
+      "extraction_method": "Engine.get_copyright_info() + Engine.get_license_info()",
+      "source_url": "https://docs.godotengine.org/en/stable/about/complying_with_licenses.html",
+      "sha256": "b0bb6c35a100551b073bb56b6c0862d35d82d5c10f2631cfd168f20c8c5275b0",
+      "verbatim_copy": false
+    }
+  ]
+}
