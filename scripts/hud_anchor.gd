@@ -2,7 +2,7 @@ extends RefCounted
 
 # Follow the headset first. Only the panel's path toward the ship engages the
 # world-height stop, so a distant or side-on table never drags the HUD around.
-const CLEARANCE := 0.08
+const CLEARANCE := 0.05
 const HEAD_OFFSET := Vector3(0.0, -0.12, -1.30)
 const POSITION_TIME := 0.12
 const PANEL_THICKNESS := 0.008

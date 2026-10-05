@@ -106,9 +106,9 @@ Use `CApp.zhl` from the matching **win32/1.6.9** directory of the Hyperspace sou
   "C:\Games\FTL-VR-Lab\hooks.json"
 ```
 
-Keep the entire signature directory together. The resolver also reads neighboring files such as `CEvent.zhl`, `TextInput.zhl`, `CommandGui.zhl`, `TabbedWindow.zhl`, `ChoiceBox.zhl`, `MouseControl.zhl`, `StarMap.zhl`, `MenuScreen.zhl`, `OptionsScreen.zhl`, `SystemControl.zhl`, `SystemBox.zhl` and `ShipSystem.zhl`. It checks unique signatures and structure probes, then stores the fingerprint and resolved addresses locally. Do not copy somebody else's `hooks.json` as a substitute.
+Keep the entire signature directory together. The resolver also reads neighboring files such as `CEvent.zhl`, `TextInput.zhl`, `CommandGui.zhl`, `TabbedWindow.zhl`, `ChoiceBox.zhl`, `MouseControl.zhl`, `StarMap.zhl`, `MenuScreen.zhl`, `OptionsScreen.zhl`, `CombatControl.zhl`, `GameOver.zhl`, `FocusWindow.zhl`, `SystemControl.zhl`, `SystemBox.zhl` and `ShipSystem.zhl`. It checks unique signatures and structure probes, then stores the fingerprint and resolved addresses locally. Do not copy somebody else's `hooks.json` as a substitute.
 
-**Updating an existing installation:** close the client and game, then rerun this step with the current `resolve_hooks.py` against your verified lab executable. The HUD/menu correction requires the new `MenuScreenOnRender` and `OptionsScreenOnRender` addresses. Keep the matching `MenuScreen.zhl` and `OptionsScreen.zhl` beside `CApp.zhl`. No game reinstall or save reset is needed. Run `CHECK-SETUP.cmd` afterward.
+**Updating an existing installation:** close the client and game, then rerun this step with the current `resolve_hooks.py` against your verified lab executable. In addition to the earlier `MenuScreenOnRender` and `OptionsScreenOnRender` hooks, the current correction requires `CombatControlRenderTarget` and validated native result-window offsets. Keep matching `CombatControl.zhl`, `GameOver.zhl` and `FocusWindow.zhl` beside `CApp.zhl`, together with the earlier neighboring signatures. Run `CHECK-SETUP.cmd` afterward.
 
 ## 5. Extract local presentation assets
 

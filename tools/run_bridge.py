@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import queue
 import struct
@@ -97,7 +98,7 @@ def decode_state_line(line):
         result['projectiles'] = []
     for side in ('player','enemy'):
         if isinstance(result.get(side),dict):
-            for field in ('rooms','crew','weapons','doors','drones','drone_equipment','system_status'):
+            for field in ('rooms','crew','weapons','artillery','doors','drones','drone_equipment','system_status'):
                 if not isinstance(result[side].get(field),list): result[side][field]=[]
             for room in result[side]['rooms']:
                 for field in ('fire_tiles','breach_tiles'):
@@ -133,7 +134,15 @@ def full_screen_capture(state):
     # Native shops, upgrades, crew and equipment are world panels, never HUDs.
     # An in-run window owns its pixels even if the native menu flag also sets
     # ui_mode to menu. Initial/hangar screens keep their full headset view.
-    return not state.get('ready') or (state.get('ui_mode','menu') == 'menu' and not state.get('panel_open'))
+    return bool(state.get('end_screen')) or not state.get('ready') or (state.get('ui_mode','menu') == 'menu' and not state.get('panel_open'))
+
+
+def apply_end_screen(state, is_open):
+    state['end_screen']=bool(is_open)
+    if is_open:
+        state.update(ui_mode='menu',blocking_ui=True,panel_open=False,
+                     tactical=False,map_open=False,event_open=False,transition=False)
+    return state
 
 
 def world_gameplay_available(state):
@@ -316,8 +325,37 @@ def _translate_command(command, state):
         ships=target.get('ships',['enemy'])
         if (side=='enemy' and not state.get('combat')) or not active or side not in ships:
             raise ValueError('Select an actual FTL weapon or targeted system before targeting this ship')
-        x,y = room_pixel(state, side, data['room_id'])
-        return [{'type':'mouse','button':'left','phase':data.get('phase','click'),'x':x,'y':y}]
+        phase=data.get('phase','click')
+        if phase not in ('down','up','click','move'): raise ValueError('Invalid target phase')
+        if 'point' in data:
+            weapon=next((w for w in (state.get('player') or {}).get('weapons',[])
+                         if w.get('slot')==state.get('weapon_selected')),None)
+            if target.get('kind','weapon')!='weapon' or not weapon or weapon.get('kind')!='beam':
+                raise ValueError('Free endpoints are only valid for the selected native beam')
+            point=data['point']
+            if not isinstance(point,dict) or any(isinstance(point.get(k),bool) or
+                    not isinstance(point.get(k),(int,float)) or not math.isfinite(point[k]) for k in ('x','y')):
+                raise ValueError('Beam endpoint must have finite coordinates')
+            ship=state.get(side) or {}
+            rects=[(r['x'],r['y'],r['w'],r['h']) for r in ship.get('rooms',[]) if all(k in r for k in ('x','y','w','h'))]
+            image=ship.get('ship_image') or {}
+            if all(k in image for k in ('x','y','w','h')): rects.append(tuple(image[k] for k in ('x','y','w','h')))
+            if not rects or not (min(r[0] for r in rects)<=point['x']<=max(r[0]+r[2] for r in rects) and
+                                min(r[1] for r in rects)<=point['y']<=max(r[1]+r[3] for r in rects)):
+                raise ValueError('Beam endpoint is outside the native ship bounds')
+            origin=state[side+'_origin']
+            x,y=round(origin['x']+point['x']),round(origin['y']+point['y'])
+            if not (0<=x<1280 and 0<=y<720): raise ValueError('Beam endpoint is outside the native view')
+        else:
+            x,y = room_pixel(state, side, data['room_id'])
+        if phase=='move': return [{'type':'move','x':x,'y':y}]
+        if phase=='up' and 'point' in data:
+            # Native beams commit on the second click, not MouseUp. Translate
+            # the VR release to release then click; FTL chooses the final aim,
+            # beam length and target vector, including its reversed ordering.
+            return [{'type':'mouse','button':'left','phase':'up','x':x,'y':y},
+                    {'type':'mouse','button':'left','phase':'click','x':x,'y':y}]
+        return [{'type':'mouse','button':'left','phase':phase,'x':x,'y':y}]
     if action == 'system_power':
         system_id=data.get('system_id')
         system_key=data.get('system_key')
@@ -388,6 +426,7 @@ def main():
     stop = threading.Event()
     current = {}
     native_text_entry={'active':False}
+    native_end_screen=False
     native_power_buttons={}
     power_buttons_received=0.0
     capture_size = [1280,720]
@@ -457,8 +496,8 @@ def main():
                 full_screen=full_screen_capture(snapshot)
                 # Native windows stay original. Gameplay never promotes a colored
                 # world/jump frame into an opaque head-locked screen.
-                if controller_screen:
-                    publisher.publish('screen_frame',image,captured_at)
+                if controller_screen or full_screen:
+                    publisher.publish('screen_frame',rgb.convert('RGBA') if full_screen else image,captured_at)
                 if event_open:
                     publisher.publish('event_frame',rgb.convert('RGBA'),captured_at)
                 if panel_open:
@@ -581,6 +620,7 @@ def main():
                         latest=state; shots.extend(state.get('shots',[]))
                     elif 'FTLVR_ERROR' in line: errors.append(line.strip())
                 if latest:
+                    apply_end_screen(latest,native_end_screen)
                     enable_supplemental=bool(latest.get('ready') and latest.get('ui_mode')!='menu')
                     presentation='tactical' if latest.get('tactical') and not any(latest.get(key) for key in ('map_open','event_open','panel_open','blocking_ui')) else ('game' if enable_supplemental and not any(latest.get(key) for key in ('map_open','event_open','panel_open')) else 'window')
                     capture_mode=(enable_supplemental,presentation)
@@ -610,6 +650,11 @@ def main():
                         atomic_json(local/'live_state.json',current)
             while not log_queue.empty():
                 payload=log_queue.get()
+                if payload.get('type')=='end_screen':
+                    native_end_screen=bool(payload['value']['open'])
+                    with state_lock:
+                        apply_end_screen(current,native_end_screen)
+                    continue
                 if payload.get('type')=='text_entry':
                     native_text_entry=dict(payload['value'])
                     with state_lock:

@@ -26,6 +26,7 @@ var room_nodes: Dictionary = {}
 var room_bounds: Dictionary = {}
 var room_visibility: Dictionary = {}
 var weapon_nodes: Array[Node3D] = []
+var artillery_nodes: Dictionary = {}
 var door_nodes: Dictionary = {}
 var drone_nodes: Dictionary = {}
 var drop_target_room := -1
@@ -36,10 +37,16 @@ var live_data: Dictionary = {}
 var inspect_rooms := false
 var demo_crew_marker: Area3D
 var native_shield_geometry: Dictionary = {}
-var shield_state_cache := Vector2i(-1, -1)
+var shield_state_cache := Vector3i(-1, -1, -1)
 var room_hazards: Node3D
 var viewer_position := Vector3.ZERO
 var viewer_position_valid := false
+var cloaked := false
+var cloak_strength := 0.0
+var cloak_target := 0.0
+var cloak_native_progress := false
+var cloak_initialized := false
+var cloak_materials: Dictionary = {}
 
 
 func build(name: String, is_enemy: bool) -> void:
@@ -53,6 +60,7 @@ func build(name: String, is_enemy: bool) -> void:
 	room_visibility.clear()
 	crew_nodes.clear()
 	weapon_nodes.clear()
+	artillery_nodes.clear()
 	door_nodes.clear()
 	drone_nodes.clear()
 	drop_target_room = -1
@@ -61,7 +69,13 @@ func build(name: String, is_enemy: bool) -> void:
 	shield_fit_padding = 1.0
 	demo_crew_marker = null
 	native_shield_geometry.clear()
-	shield_state_cache = Vector2i(-1, -1)
+	shield_state_cache = Vector3i(-1, -1, -1)
+	cloak_materials.clear()
+	cloaked = false
+	cloak_strength = 0.0
+	cloak_target = 0.0
+	cloak_native_progress = false
+	cloak_initialized = false
 	ship_name = name
 	enemy = is_enemy
 	var path := _data_path("%s.json" % name)
@@ -111,6 +125,7 @@ func _make_hull(layout: Dictionary, center: Vector2) -> void:
 	var texture_path := _data_path("%s.png" % ship_name)
 	if rect.is_empty() or not FileAccess.file_exists(texture_path):
 		var block := MeshInstance3D.new()
+		block.name = "Hull"
 		block.mesh = BoxMesh.new()
 		block.scale = Vector3(1.8, 0.07, 1.15)
 		block.material_override = _material(Color(0.28, 0.32, 0.43) if enemy else Color(0.28, 0.36, 0.52))
@@ -123,6 +138,7 @@ func _make_hull(layout: Dictionary, center: Vector2) -> void:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(float(rect["w"]) / 35.0 * TILE, float(rect["h"]) / 35.0 * TILE)
 	var mesh := MeshInstance3D.new()
+	mesh.name = "HullDeck"
 	mesh.mesh = quad
 	mesh.position = Vector3((float(rect["x"]) / 35.0 + float(rect["w"]) / 70.0 - center.x) * TILE,
 		0.005, (float(rect["y"]) / 35.0 + float(rect["h"]) / 70.0 - center.y) * TILE)
@@ -514,11 +530,57 @@ func _make_weapon_mounts(layout: Dictionary, center: Vector2) -> void:
 		var gun := WeaponModel.new()
 		gun.position = point
 		gun.rotation.y = 0.0 if str(mount.get("rotate", "false")) == "true" else PI / 2.0
+		gun.scale.z = -1.0 if str(mount.get("mirror", "false")) == "true" else 1.0
 		gun.build({"kind": "laser", "powered": false})
 		add_child(gun)
 		weapon_nodes.append(gun)
 	if mount_points.is_empty():
 		mount_points.append(Vector3(0.5, 0.14, 0.0))
+
+
+func _mount_point(mount: Dictionary) -> Vector3:
+	# WeaponMount.position is relative to shipImage, whereas crew/rooms are
+	# already in graph pixels. Apply the image rectangle exactly once.
+	var rect: Dictionary = layout_data.get("image_rect", {})
+	return Vector3((float(rect.get("x", 0)) + float(mount.get("x", 0))) / 35.0 * TILE - layout_center.x * TILE,
+		0.14, (float(rect.get("y", 0)) + float(mount.get("y", 0))) / 35.0 * TILE - layout_center.y * TILE)
+
+
+func _apply_weapon_pose(weapon: Node3D, data: Dictionary) -> void:
+	var mount: Dictionary = data.get("mount", {})
+	if not mount.is_empty():
+		weapon.position = _mount_point(mount)
+	if data.has("mount_rotate"):
+		weapon.rotation.y = 0.0 if bool(data.mount_rotate) else PI / 2.0
+	if data.has("mount_mirror"):
+		# The model fires along +X; mirroring native art flips its cross-axis.
+		weapon.scale.z = -1.0 if bool(data.mount_mirror) else 1.0
+
+
+func _apply_artillery(rows: Array) -> void:
+	var present: Dictionary = {}
+	for row in rows:
+		if not row is Dictionary:
+			continue
+		var slot := int(row.get("slot", 0))
+		present[slot] = true
+		if not artillery_nodes.has(slot):
+			var gun := WeaponModel.new()
+			gun.name = "Artillery%d" % slot
+			gun.build(row)
+			add_child(gun)
+			artillery_nodes[slot] = gun
+		var weapon: Node3D = artillery_nodes[slot]
+		if weapon.kind != WeaponModel.canonical_kind(str(row.get("kind", "laser"))) or weapon.weapon_name != str(row.get("name", "")):
+			weapon.build(row)
+		_apply_weapon_pose(weapon, row)
+		weapon.set_live(row)
+	for slot in artillery_nodes.keys():
+		if not present.has(slot):
+			var weapon: Node3D = artillery_nodes[slot]
+			remove_child(weapon)
+			weapon.queue_free()
+			artillery_nodes.erase(slot)
 
 
 func _make_shield(layout: Dictionary) -> void:
@@ -549,15 +611,15 @@ func _make_shield(layout: Dictionary) -> void:
 	set_shields(2)
 
 
-func set_shields(charge: int, super_shield: int = 0) -> void:
+func set_shields(charge: int, super_shield: int = 0, shutdown: bool = false) -> void:
 	shield_charge = maxi(charge, 0)
 	if shield_shell == null:
 		return
-	var current := Vector2i(shield_charge, super_shield)
+	var current := Vector3i(shield_charge, super_shield, int(shutdown))
 	if current == shield_state_cache:
 		return
 	shield_state_cache = current
-	shield_shell.visible = shield_charge > 0 or super_shield > 0
+	shield_shell.visible = not shutdown and (shield_charge > 0 or super_shield > 0)
 	var material: ShaderMaterial = shield_shell.material_override
 	material.set_shader_parameter("shield_color", Color(0.23, 0.95, 0.35) if super_shield > 0 else Color(0.18, 0.58, 1.0))
 	material.set_shader_parameter("strength", clampf(shield_charge / 4.0, 0.25, 1.0))
@@ -622,6 +684,13 @@ func set_viewer_position(world_position: Vector3) -> void:
 
 
 func _process(delta: float) -> void:
+	if not cloak_native_progress and not is_equal_approx(cloak_strength, cloak_target):
+		# Older snapshots provide only the actual native cloak toggle. Ease that
+		# presentation transition; first observations are applied immediately.
+		cloak_strength = move_toward(cloak_strength, cloak_target, delta * 4.0)
+		_restore_cloak_materials()
+		if cloak_strength > 0.001:
+			_apply_cloak_materials(self)
 	if not simulation_paused:
 		shield_flash = maxf(0.0, shield_flash - delta * 3.0)
 	if shield_shell != null:
@@ -645,6 +714,8 @@ func _process(delta: float) -> void:
 	if not simulation_paused:
 		for weapon in weapon_nodes:
 			weapon.animate(delta)
+		for weapon in artillery_nodes.values():
+			weapon.animate(delta)
 		for drone in drone_nodes.values():
 			drone.animate(delta)
 		if is_instance_valid(room_hazards):
@@ -667,6 +738,9 @@ func pixel_point(point: Dictionary, height: float = 0.18) -> Vector3:
 
 
 func apply_live(data: Dictionary) -> void:
+	# Native room/weapon condition updates operate on their original materials.
+	# Cloaking then applies isolated copies, including newly spawned actors.
+	_restore_cloak_materials()
 	live_data = data
 	var system_rows: Dictionary = {}
 	for row in data.get("system_status", []):
@@ -749,13 +823,58 @@ func apply_live(data: Dictionary) -> void:
 			var weapon: Node3D = weapon_nodes[slot]
 			if weapon.kind != WeaponModel.canonical_kind(str(weapons[slot].get("kind", "laser"))) or weapon.weapon_name != str(weapons[slot].get("name", "")):
 				weapon.build(weapons[slot])
+			_apply_weapon_pose(weapon, weapons[slot])
+			mount_points[slot] = weapon.position
 			weapon.set_live(weapons[slot])
+	_apply_artillery(data.get("artillery", []))
 	_apply_doors(data.get("doors", []))
 	_apply_drones(data.get("drones", []))
 	if is_instance_valid(room_hazards):
 		room_hazards.set_live(self, data)
 	_apply_shield_shape(data.get("shield_shape", {}))
-	set_shields(int(data.get("shield", 0)), int(data.get("super_shield", 0)))
+	set_shields(int(data.get("shield", 0)), int(data.get("super_shield", 0)), bool(data.get("shield_shutdown", false)))
+	cloaked = bool(data.get("cloaked", false))
+	cloak_target = 1.0 if cloaked else 0.0
+	cloak_native_progress = data.has("cloak_progress")
+	if cloak_native_progress:
+		cloak_strength = clampf(float(data.cloak_progress), 0.0, 1.0)
+	elif not cloak_initialized:
+		cloak_strength = cloak_target
+	cloak_initialized = true
+	if cloak_strength > 0.001:
+		_apply_cloak_materials(self)
+
+
+func _restore_cloak_materials() -> void:
+	for id in cloak_materials.keys():
+		var entry: Dictionary = cloak_materials[id]
+		var node: GeometryInstance3D = entry.node.get_ref()
+		if not is_instance_valid(node) or not is_ancestor_of(node):
+			cloak_materials.erase(id)
+		elif node.material_override == entry.faded:
+			node.material_override = entry.source
+
+
+func _apply_cloak_materials(node: Node) -> void:
+	# Material alpha works in Vulkan mobile and stereo. GeometryInstance3D's
+	# transparency property is limited to Forward+, so it cannot drive this.
+	if node is GeometryInstance3D and node.material_override is StandardMaterial3D and node.name != "SystemIcon":
+		var source: StandardMaterial3D = node.material_override
+		var id := node.get_instance_id()
+		if not cloak_materials.has(id) or cloak_materials[id].source != source:
+			cloak_materials[id] = {"node": weakref(node), "source": source, "faded": source.duplicate()}
+		var material: StandardMaterial3D = cloak_materials[id].faded
+		var hull_part := node.name in ["Hull", "HullDeck", "ExtrudedHull"]
+		var alpha := lerpf(1.0, 0.375 if hull_part else 0.5, cloak_strength)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.albedo_color = source.albedo_color
+		material.albedo_color.a *= alpha
+		material.emission_enabled = source.emission_enabled
+		material.emission = source.emission
+		material.emission_energy_multiplier = source.emission_energy_multiplier * alpha
+		node.material_override = material
+	for child in node.get_children():
+		_apply_cloak_materials(child)
 
 
 func _room_visible(id: int) -> bool:
@@ -803,6 +922,12 @@ func _make_miniature(crew: Dictionary) -> Area3D:
 
 func weapon_origin(slot: int) -> Vector3:
 	return to_global(mount_points[posmod(slot, mount_points.size())])
+
+
+func artillery_origin(slot: int) -> Vector3:
+	if artillery_nodes.has(slot):
+		return artillery_nodes[slot].global_position
+	return global_position
 
 
 func room_target(room_id: int) -> Vector3:

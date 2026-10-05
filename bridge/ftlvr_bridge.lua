@@ -107,7 +107,8 @@ local function ship_snapshot(ship, gui)
     local graph = Hyperspace.ShipGraph.GetShipInfo(ship.iShipId)
     local result = {layout=ship.myBlueprint.layoutFile, image=ship.myBlueprint.imgFile,
         hull=ship.ship.hullIntegrity.first, hull_max=ship.ship.hullIntegrity.second,
-        destroyed=ship.bDestroyed, rooms={}, crew={}, weapons={}, doors={}, drones={},drone_equipment={},
+        destroyed=ship.bDestroyed, cloaked=ship.ship.bCloaked,
+        rooms={}, crew={}, weapons={}, artillery={}, doors={}, drones={},drone_equipment={},
         systems={}, system_power={}, system_status={}, room_systems={}}
     -- Native sensor_4 permits enemy power bars; sensor_2 only reveals rooms.
     -- Condition colours remain public, just as the native target icons do.
@@ -154,6 +155,7 @@ local function ship_snapshot(ship, gui)
     local shield = ship:GetShieldPower()
     result.shield = shield.first
     result.super_shield = shield.super.first
+    result.shield_shutdown=ship.shieldSystem and ship.shieldSystem.shields_shutdown or false
     local ellipse=ship.ship:GetBaseEllipse()
     result.shield_shape={center=point(ellipse.center),a=ellipse.a,b=ellipse.b}
     local image=ship.ship.shipImage
@@ -244,17 +246,18 @@ local function ship_snapshot(ship, gui)
         append_space_drone(result.drones,ship.spaceDrones[i],i)
     end
     local weapons = ship:GetWeaponList()
-    for i=0, weapons:size()-1 do
-        local weapon = weapons[i]
+    local function append_weapon(list, weapon, i)
+        if not weapon then return end
         local kind=weapon.blueprint.typeName:lower()
         if kind=='missiles' then kind='missile' end
         if kind=='burst' then kind='flak' end
         if weapon.blueprint.damage.iIonDamage>0 then kind='ion' end
-        result.weapons[#result.weapons+1] = {slot=i, name=weapon.blueprint.name,
+        list[#list+1] = {slot=i, name=weapon.blueprint.name,
             title=blueprint_title(weapon.blueprint,false),short_title=blueprint_title(weapon.blueprint,true),
             ammo_cost=weapon.blueprint.missiles,
             kind=kind, powered=weapon.powered, autofire=weapon.autoFiring, charge=weapon.cooldown.first,
             cooldown=weapon.cooldown.second, mount=point(weapon.mount.position),
+            mount_rotate=weapon.mount.rotate,mount_mirror=weapon.mount.mirror,
             charge_fraction=weapon.cooldown.second>0 and math.min(1,math.max(0,weapon.cooldown.first/weapon.cooldown.second)) or 1,
             charge_level=weapon.chargeLevel,charge_max=weapon.blueprint.chargeLevels,
             required_power=weapon.requiredPower,ready=weapon.powered and weapon.cooldown.first>=weapon.cooldown.second,
@@ -263,13 +266,19 @@ local function ship_snapshot(ship, gui)
             muzzle=point(weapon.weaponVisual.fireLocation), firing=weapon.weaponVisual.bFiring}
 		-- Display the player's real placed aiming marks, never an enemy's intent.
 		if ship.iShipId==0 then
-			local row=result.weapons[#result.weapons]
+			local row=list[#list]
 			row.targets={}
 			for n=0,weapon.targets:size()-1 do row.targets[#row.targets+1]=point(weapon.targets[n]) end
 			row.target_ship=weapon.targetId
 			row.target_radius=weapon.radius
 			row.beam_length=weapon.blueprint.length
 		end
+    end
+    for i=0, weapons:size()-1 do append_weapon(result.weapons,weapons[i],i) end
+    -- Flagship turrets and artillery systems are separate native factories.
+    -- Keep them out of the ordinary weapon slots used by controller shortcuts.
+    for i=0,ship.artillerySystems:size()-1 do
+        append_weapon(result.artillery,ship.artillerySystems[i].projectileFactory,i)
     end
     return result
 end
@@ -388,11 +397,22 @@ local function snapshot()
             alive[p.selfId]=true
             local progress=math.min(0.48,distance(p.position,record.start)/600)
             if p.currentSpace==p.targetId then
-                local remaining=distance(p.position,p.target)
-                record.entry_distance=record.entry_distance or math.max(1,remaining)
-                progress=0.5+0.5*(1-math.min(1,remaining/record.entry_distance))
+                if not record.entry then
+                    record.entry=point(p.position)
+                    record.dx=p.target.x-p.position.x
+                    record.dy=p.target.y-p.position.y
+                    record.entry_length2=math.max(1,record.dx*record.dx+record.dy*record.dy)
+                end
+                -- Signed travel along the target-space segment continues past
+                -- the target after a miss. Radial distance would turn it back.
+                local travel=((p.position.x-record.entry.x)*record.dx+
+                    (p.position.y-record.entry.y)*record.dy)/record.entry_length2
+                progress=0.5+0.5*math.max(0,travel)
+                if not p.missed then progress=math.min(1,progress) end
             end
-            local live={id=tostring(p.selfId), progress=progress, missed=p.missed}
+            record.progress=math.max(record.progress or 0,progress)
+            local live={id=tostring(p.selfId), progress=record.progress, missed=p.missed,
+                current_space=p.currentSpace,target_space=p.targetId,position=point(p.position)}
             if record.beam and p.currentSpace==p.targetId then
                 live.beam_point=point(record.beam.sub_end)
             end
@@ -436,14 +456,22 @@ script.on_internal_event(Defines.InternalEvents.PROJECTILE_FIRE, function(projec
     if projectile.damage.iIonDamage > 0 then kind='ion' end
     local graph = Hyperspace.ShipGraph.GetShipInfo(projectile.targetId)
     local slot=0
+    local artillery_slot=nil
     local sender=Hyperspace.ships(projectile.ownerId)
     if sender then
         local list=sender:GetWeaponList()
         for i=0,list:size()-1 do
             if list[i].mount.position.x==weapon.mount.position.x and list[i].mount.position.y==weapon.mount.position.y then slot=i;break end
         end
+        for i=0,sender.artillerySystems:size()-1 do
+            local factory=sender.artillerySystems[i].projectileFactory
+            if factory and factory.mount.position.x==weapon.mount.position.x and factory.mount.position.y==weapon.mount.position.y then
+                artillery_slot=i;break
+            end
+        end
     end
     local event = {id='fire-'..tostring(id), projectile_id=tostring(projectile.selfId), weapon_slot=slot,
+        artillery_slot=artillery_slot,
         source=projectile.ownerId==0 and 'player' or 'enemy', kind=kind,
         target_space=projectile.targetId,
         start=point(projectile.position), target=point(projectile.target),

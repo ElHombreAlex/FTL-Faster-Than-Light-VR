@@ -7,12 +7,48 @@ from PIL import Image
 
 import numpy as np
 from hud_alpha import clear_world_alpha, clear_supplemental_hud_alpha
-from run_bridge import (decode_state_line, translate_command, full_screen_capture,
+from run_bridge import (decode_state_line, translate_command, full_screen_capture,apply_end_screen,
                         remove_enemy_hud, native_window_frame, remove_pause_overlay,
                         FRAME_HEADER, raw_frame_bytes, FramePublisher)
 
 
 class BridgeTests(unittest.TestCase):
+    def test_results_override_stale_native_modal_flags(self):
+        state={'ready':True,'ui_mode':'game','panel_open':True,'tactical':True,
+               'map_open':True,'event_open':True,'transition':True}
+        apply_end_screen(state,True)
+        self.assertTrue(full_screen_capture(state))
+        self.assertTrue(state['blocking_ui'])
+        for key in ('panel_open','tactical','map_open','event_open','transition'):
+            self.assertFalse(state[key])
+        fresh={'ready':True,'ui_mode':'game'}
+        apply_end_screen(fresh,False)
+        self.assertFalse(full_screen_capture(fresh))
+
+    def test_beam_free_endpoints_keep_subroom_precision_and_drag_movement(self):
+        state={'ready':True,'ui_mode':'game','combat':True,'weapon_selected':0,
+               'targeting':{'active':True,'kind':'weapon','ships':['enemy']},
+               'player':{'weapons':[{'slot':0,'kind':'beam'}]},
+               'enemy_origin':{'x':900,'y':105},
+               'enemy':{'ship_image':{'x':-20,'y':-10,'w':250,'h':350},
+                        'rooms':[{'id':3,'x':0,'y':0,'w':35,'h':70,'center':{'x':17.5,'y':35}}]}}
+        data={'room_id':-1,'ship':'enemy','point':{'x':72.25,'y':103.75}}
+        for phase in ('down','up','move'):
+            commands=translate_command({'action':'target_room','data':dict(data,phase=phase)},state)
+            actual=commands[0]
+            self.assertEqual((actual['x'],actual['y']),(972,209))
+            self.assertEqual(actual['type'],'move' if phase=='move' else 'mouse')
+            if phase=='up':
+                self.assertEqual([c['phase'] for c in commands],['up','click'])
+                self.assertTrue(all(c['x']==972 and c['y']==209 for c in commands))
+        for point in ({'x':float('nan'),'y':20},{'x':True,'y':20},{'x':800,'y':20},'bad'):
+            with self.assertRaises(ValueError):
+                translate_command({'action':'target_room','data':dict(data,point=point)},state)
+        state['targeting']['kind']='mind'
+        with self.assertRaises(ValueError):translate_command({'action':'target_room','data':data},state)
+        state['targeting']['kind']='weapon';state['player']['weapons'][0]['kind']='laser'
+        with self.assertRaises(ValueError):translate_command({'action':'target_room','data':data},state)
+
     def test_empty_native_drone_equipment_does_not_erase_weapons(self):
         weapons=[{'slot':0,'name':'MISSILES_2','title':'Artemis Missiles','ammo_cost':1},
                  {'slot':1,'name':'LASER_BURST_3','title':'Burst Laser Mark II','ammo_cost':0}]

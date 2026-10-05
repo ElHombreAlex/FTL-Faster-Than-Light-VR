@@ -36,9 +36,9 @@ class LaunchSetupTests(unittest.TestCase):
         names = ("GetShiftState", "GetCtrlState", "ForceAutofireFlag", "OnTextInput",
                  "OnTextEvent", "TextInputOnRender", "TextInputStart", "CommandGuiRenderStatic",
                  "CommandGuiRenderPause", "TabbedWindowOnRender", "ChoiceBoxOnRender",
-                 "MouseControlOnRender", "StarMapOnRender", "MenuScreenOnRender", "OptionsScreenOnRender")
+                 "MouseControlOnRender", "StarMapOnRender", "MenuScreenOnRender", "OptionsScreenOnRender", "CombatControlRenderTarget")
         self.hooks = self.lab / "hooks.json"
-        self.hooks.write_text(json.dumps({"rvas": dict.fromkeys(names, 1),
+        self.hooks.write_text(json.dumps({"rvas": dict.fromkeys(names, 1),"offsets":{"gui_game_over":0x1e88,"focus_window_open":4},
                                          "sha1": hashlib.sha1((self.lab / "FTLGame.exe").read_bytes()).hexdigest()}))
         self.godot = self.root / "godot.exe"
         self.godot.write_bytes(b"synthetic renderer placeholder")
@@ -65,7 +65,7 @@ class LaunchSetupTests(unittest.TestCase):
 
     def test_old_hooks_require_modal_hud_capture_update(self):
         value = json.loads(self.hooks.read_text())
-        for name in ("MenuScreenOnRender", "OptionsScreenOnRender"):
+        for name in ("MenuScreenOnRender", "OptionsScreenOnRender", "CombatControlRenderTarget"):
             with self.subTest(name=name):
                 incomplete = dict(value, rvas={key: address for key, address in value["rvas"].items() if key != name})
                 self.hooks.write_text(json.dumps(incomplete))

@@ -63,7 +63,7 @@ func run() -> void:
 	var stopped_ship: AABB = Anchor.transformed_bounds(scene._player_hud_local_bounds(), scene.player_ship.global_transform)
 	var stopped_panel: AABB = Anchor.panel_bounds(scene.hud_surface.global_transform, scene.hud_surface.surface_size)
 	var gap: float = stopped_panel.position.y - stopped_ship.end.y
-	check(gap >= .08 and gap < .10, "The blocked HUD must sit within ten centimetres of the ship while leaving a safe gap")
+	check(gap >= .05 and gap < .07, "The blocked HUD must sit five to seven centimetres above the ship while retaining a safe gap")
 	var clearance_lift: float = scene.hud_anchor.lift
 	scene.camera.rotation.y = PI
 	scene._position_hud(1.0 / 90)

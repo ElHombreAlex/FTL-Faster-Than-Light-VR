@@ -118,6 +118,8 @@ func _run() -> void:
 	hull_bar.build()
 	hull_bar.set_state({"hull": 7, "hull_max": 20})
 	_check(hull_bar.visible and hull_bar.hull == 7 and hull_bar.hull_max == 20, "Enemy life bar must display the actual native hull values")
+	hull_bar.set_state({"hull": 8, "hull_max": 15})
+	_check(is_equal_approx(hull_bar.hull_cell_rect(0).size.x, 45.0) and is_equal_approx(hull_bar.hull_cell_rect(14).position.x, 706.0), "Fifteen native hull units must fill the contour as fifteen individual pips")
 	hull_bar.position = Vector3(1, 0.4, -1)
 	var viewer := Vector3(0, 1.6, 0)
 	hull_bar.face_viewer(viewer)
@@ -264,6 +266,69 @@ func _run() -> void:
 	_check(bounds.has_point(Vector2(ship.pixel_point(near_edge.pixel).x, ship.pixel_point(near_edge.pixel).z)), "Tolerant room drops must clamp native commands back inside the selected room")
 	_check(ship.room_ray_hit(edge_from + ship.global_basis.x.normalized() * 0.03, Vector3.DOWN, 0.02).is_empty(), "Room drop tolerance must reject positions beyond its WORLD margin")
 	_check(ship.room_ray_hit(ray_from, Vector3.RIGHT, 0.02).is_empty(), "Parallel floor rays must not pick unrelated rooms")
+	ship.position = Vector3.ZERO
+	ship.rotation = Vector3.ZERO
+	ship.scale = Vector3.ONE
+	ship.set_shields(2, 0, false)
+	_check(ship.shield_shell.visible, "Charged native shields must be visible")
+	ship.set_shields(2, 0, true)
+	_check(not ship.shield_shell.visible and ship.shield_charge == 2, "Native shield shutdown must hide the shell even when cached charge is unchanged")
+	ship.set_shields(2, 0, false)
+	_check(ship.shield_shell.visible, "Ending native shield shutdown must restore the shell without a charge transition")
+	ship.set_shields(0, 0)
+	_check(not ship.shield_shell.visible, "Depleted native shields must not retain a phantom shell")
+	ship.set_shields(0, 5)
+	_check(ship.shield_shell.visible, "Native super shields must remain visible without normal shield charge")
+	var artillery := [
+		{"slot": 0, "kind": "ion", "name": "BOSS_ION", "mount": {"x": 75, "y": 110}, "mount_rotate": false, "mount_mirror": true, "powered": true, "charge_fraction": 0.25},
+		{"slot": 2, "kind": "laser", "name": "BOSS_LASER", "mount": {"x": 270, "y": 155}, "mount_rotate": true, "mount_mirror": false, "powered": true, "charge_fraction": 0.75},
+		{"slot": 5, "kind": "missile", "name": "BOSS_MISSILE", "mount": {"x": 365, "y": 210}, "mount_rotate": false, "mount_mirror": false, "powered": false},
+		{"slot": 7, "kind": "beam", "name": "BOSS_BEAM", "mount": {"x": 440, "y": 290}, "mount_rotate": true, "mount_mirror": true, "powered": true, "charge_fraction": 1.0}]
+	ship.apply_live({"artillery": artillery, "weapons": [], "rooms": [room_data], "crew": [crew]})
+	_check(ship.artillery_nodes.size() == 4 and not ship.weapon_nodes[0].visible, "Flagship artillery must create four models while ordinary native weapon equipment remains empty")
+	for row in artillery:
+		var gun: Node3D = ship.artillery_nodes[row.slot]
+		var rect: Dictionary = ship.layout_data.image_rect
+		var expected := Vector3((float(rect.x) + float(row.mount.x)) / 35.0 * ship.TILE - ship.layout_center.x * ship.TILE,
+			0.14, (float(rect.y) + float(row.mount.y)) / 35.0 * ship.TILE - ship.layout_center.y * ship.TILE)
+		_check(gun.position.is_equal_approx(expected) and ship.artillery_origin(row.slot).is_equal_approx(expected), "Artillery native mounts must use the image rectangle once, independently of sparse native slot IDs")
+		_check(is_equal_approx(gun.rotation.y, 0.0 if row.mount_rotate else PI / 2.0) and is_equal_approx(gun.scale.z, -1.0 if row.mount_mirror else 1.0), "Artillery must retain native mount rotation and mirroring")
+	_check(is_equal_approx(ship.artillery_nodes[2].charge, 0.75) and not ship.artillery_nodes[5].emitter.visible, "Native artillery cooldown and power must drive its visual state")
+	var native_hull: MultiMeshInstance3D = ship.get_node("ExtrudedHull")
+	var original_hull_material: StandardMaterial3D = native_hull.material_override
+	var original_hazard_material: StandardMaterial3D = ship.room_hazards.flame_outer.material_override
+	var cloak_state := {"artillery": artillery, "rooms": [room_data], "room_systems": {str(room_id): "shields"}, "crew": [crew], "cloaked": true, "cloak_progress": 1.0}
+	ship.apply_live(cloak_state)
+	_check(native_hull.material_override != original_hull_material and is_equal_approx(native_hull.material_override.albedo_color.a, 0.375), "Cloaking must fade hull materials in the Vulkan mobile renderer")
+	_check(is_equal_approx(original_hull_material.albedo_color.a, 1.0) and original_hull_material.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED, "Cloaking must leave original hull materials unmodified")
+	_check(ship.room_hazards.flame_outer.material_override != original_hazard_material and ship.room_hazards.shared_visuals.FireOuter.material == original_hazard_material, "Cloaking must isolate immutable shared hazard materials from other ships")
+	_check(ship.crew_nodes["model-test"].collision_layer == 1 and ship.crew_nodes["model-test"].get_node("Name").visible and room.get_node("SystemIcon").visible, "Cloaking must preserve controllable crew colliders and native targeting labels")
+	room_data["oxygen"] = 0
+	ship.apply_live(cloak_state)
+	var cloak_floor: StandardMaterial3D = room.get_node("Floor").material_override
+	_check(is_equal_approx(cloak_floor.albedo_color.a, 0.5) and cloak_floor.albedo_color.r > 0.9, "Native room tint updates must continue through cloaked material copies")
+	cloak_state["cloaked"] = false
+	cloak_state["cloak_progress"] = 0.5
+	ship.apply_live(cloak_state)
+	_check(is_equal_approx(native_hull.material_override.albedo_color.a, 0.6875), "Cloak fade-out must use native progress without inventing an animation clock")
+	cloak_state["cloak_progress"] = 0.0
+	ship.apply_live(cloak_state)
+	_check(native_hull.material_override == original_hull_material and ship.room_hazards.flame_outer.material_override == original_hazard_material, "Uncloaking must restore the exact original material resources")
+	cloak_state.erase("cloak_progress")
+	cloak_state["cloaked"] = true
+	ship.apply_live(cloak_state)
+	ship._process(0.125)
+	_check(is_equal_approx(ship.cloak_strength, 0.5) and is_equal_approx(native_hull.material_override.albedo_color.a, 0.6875), "Boolean native cloak state must ease the visible material fade when progress is unavailable")
+	ship._process(0.125)
+	_check(is_equal_approx(native_hull.material_override.albedo_color.a, 0.375), "Boolean cloak activation must reach the native fully cloaked hull alpha")
+	cloak_state["cloaked"] = false
+	ship.apply_live(cloak_state)
+	ship._process(0.25)
+	_check(native_hull.material_override == original_hull_material, "Boolean cloak deactivation must restore opaque hull geometry")
+	ship.apply_live({"artillery": [artillery[0]]})
+	_check(ship.artillery_nodes.size() == 1 and ship.artillery_nodes.has(0), "Destroyed or removed native artillery must disappear immediately")
+	ship.apply_live({})
+	_check(ship.artillery_nodes.is_empty(), "Absent native artillery must not leave phantom Flagship weapons")
 	for asset in ["auto_assault", "fed_scout__fed_scout_pirate", "rebel_long", "energy_fighter_pirate"]:
 		var opponent := ShipModel.new()
 		root.add_child(opponent)

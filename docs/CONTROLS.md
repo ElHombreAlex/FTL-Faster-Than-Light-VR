@@ -12,7 +12,7 @@ Open **Controls / Help** on the left panel for an illustrated controller diagram
 |---|---|
 | Right trigger | Click native HUD/menu controls, select crew, order movement or target a room |
 | Right trigger held on crew | Grab a movement preview; release over a room on that crew's current ship to order movement |
-| Right trigger held for a beam | Start at one enemy room and release at the beam's end room |
+| Right trigger held for a beam | Place the start on the enemy deck plane, then release at the endpoint; points may lie between rooms |
 | Right B | Native right click on a pointed HUD control; cancel selection/grab/wheel over space |
 | Right A | Toggle enemy room inspection; change category when the wheel is open |
 | Right grip, held | Hold the game's Shift modifier |
@@ -20,7 +20,8 @@ Open **Controls / Help** on the left panel for an illustrated controller diagram
 | Right bumper, held | Open the shortcut wheel |
 | Right stick direction | Select a wheel slot; release bumper to confirm |
 | Left Dpad Down | Open or close Tactical |
-| Left View | Pause or resume |
+| Right Pause / Menu | Pause or resume |
+| Left View | Hide or show the controller panel |
 | Left Dpad Up | Open or close System Power |
 | Left Dpad Left / Right | Previous / next hand-screen page |
 | Left grip, held + hand motion | Move the encounter |
@@ -30,6 +31,8 @@ Open **Controls / Help** on the left panel for an illustrated controller diagram
 | Right grip + left trigger | Save stations, except on System Power |
 
 The page order is **Navigation → Tactical → Shortcuts → System Power → Jump → Help**. Navigation includes a direct **SYSTEM POWER** button as well as Shortcuts. Point at an available panel button with the right controller and pull the right trigger. Jump, Ship and Store are offered according to native game availability.
+
+On Steam Frame, use the physical right **Pause / Menu** button to pause. Left **View** hides or restores the controller panel so it can be cleared from your view. Fallback controller profiles may expose these actions on different buttons; check the in-VR Help and active interaction profile.
 
 ## System Power page
 
@@ -51,6 +54,7 @@ The game decides whether a change is allowed. One engine step changes one power 
 - Release over empty space to keep the selection, or use B to cancel the grab.
 - Trigger-click a door or airlock to toggle it. Native locked, disabled and hacked states still apply.
 - Select a weapon or targeting system first, then point at its allowed ship and trigger-click a room. Mind control, hacking and teleporters use native targeting rules, including power, cooldown and sensor restrictions.
+- For a beam weapon, hold the trigger at its start point and release at its end point on the enemy deck plane. Room centers, floor snapping and room boundaries do not constrain these endpoints; a line may cross gaps between rooms. FTL still determines the beam's length, accepted aim and damage.
 - Tactical retains the original 2D view while allowing 3D crew, room and door interaction.
 
 Enemy inspection reveals room roles; it does not reveal crew or hazards that FTL's sensors hide.
@@ -86,9 +90,9 @@ These are native key equivalents shown on buttons, not extra physical controller
 
 During an actual native jump, surrounding stars stretch along your ship's bow. Turning your head does not change the travel direction. Arrival restores normal stars, including when the arrival dialog opens. Opening the map or charging FTL alone does not start the stretch.
 
-Events, Store (including BUY/SELL), upgrades, crew and equipment windows float above the player ship. Their original localized controls stay interactive. Main menus remain complete, head-relative 2D views.
+Events, Store (including BUY/SELL), upgrades, crew and equipment windows float above the player ship. Their original localized controls stay interactive. Main menus and native defeat/victory results use the complete, head-relative 2D screen. On a result screen, the encounter, target marks, combat effects and controller panel are cleared from view.
 
-Gameplay uses a **compact HUD anchored to the headset**, retaining native upper status and the crew roster while removing the lower weapons/reactor/system/subsystem strip. Use Power, Shortcuts or the wheel for those lower-strip actions. The HUD keeps a fixed readable size and follows the headset whenever there is room. If that movement would carry the panel into the ship or shield, it stops 8 cm above the ship until clearance permits headset-relative placement again. A raised or oversized table can therefore raise the panel during overlap. The hand panel retains visual and pointing priority where it overlaps the HUD. Ship, shop, pause-menu and Options windows opened during a run appear only above the ship; point at that floating panel to use them. Initial/hangar menus and desktop Tactical/map inspection keep the complete native view.
+Gameplay uses a **compact HUD anchored to the headset**, retaining native upper status and the crew roster while removing the lower weapons/reactor/system/subsystem strip. Use Power, Shortcuts or the wheel for those lower-strip actions. The HUD keeps a fixed readable size and follows the headset whenever there is room. If that movement would carry the panel into the ship or shield, it stops 5 cm above the ship until clearance permits headset-relative placement again. A raised or oversized table can therefore raise the panel during overlap. The hand panel retains visual and pointing priority where it overlaps the HUD. Ship, shop, pause-menu and Options windows opened during a run appear only above the ship; point at that floating panel to use them. Initial/hangar menus, results and desktop Tactical/map inspection keep the complete native view.
 
 The native intruder warning keeps its lettering and subtle shadow/fringe on a transparent backdrop; neighboring HUD controls remain visible and pointable.
 

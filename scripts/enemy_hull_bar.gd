@@ -5,6 +5,8 @@ const WIDTH := 0.64
 const HEIGHT := 0.10
 const PIXELS := Vector2i(770,130)
 const HULL_COLOR := Color("85ff79")
+const FILL_RECT := Rect2(34, 0, 720, 130)
+static var native_contour: Texture2D
 var viewport: SubViewport
 var canvas: Control
 var plate: MeshInstance3D
@@ -64,14 +66,18 @@ func face_viewer(viewer: Vector3) -> void:
 func _draw() -> void:
 	var fraction := clampf(float(hull) / maxf(hull_max, 1), 0.0, 1.0)
 	var frame := UI.ASSETS.texture("img/statusUI/top_hull_red.png" if fraction <= .33 else "img/statusUI/top_hull.png")
-	var mask := UI.ASSETS.texture("img/statusUI/top_hull_bar_mask.png")
+	var mask := _hull_contour()
 	var label := UI.ASSETS.texture("img/statusUI/top_hull_red_label.png" if fraction <= .33 else "img/statusUI/top_hull_label.png")
-	# Use the actual vanilla stepped contour and segmented mask. Only owner-local
-	# textures are read; no FTL imagery is embedded in the distributable mod.
+	# Keep the owner's native stepped contour, but one pip means one hit point.
+	# The player mask's fixed thirty separators are replaced by hull_max cells.
 	if frame != null and mask != null and label != null:
-		canvas.draw_texture_rect(mask,Rect2(34,0,720,130),false,Color("253b32"))
-		if fraction > 0:
-			canvas.draw_texture_rect_region(mask,Rect2(34,0,720 * fraction,130),Rect2(0,0,360 * fraction,65),HULL_COLOR if fraction > .33 else UI.RED)
+		var source_size := mask.get_size()
+		for i in range(hull_max):
+			var cell := hull_cell_rect(i)
+			var source := Rect2((cell.position - FILL_RECT.position) * source_size / FILL_RECT.size,
+				cell.size * source_size / FILL_RECT.size)
+			canvas.draw_texture_rect_region(mask, cell, source,
+				(HULL_COLOR if fraction > .33 else UI.RED) if i < hull else Color("253b32"))
 		canvas.draw_texture_rect(frame,Rect2(0,0,770,130),false)
 		canvas.draw_texture_rect(label,Rect2(18,0,104,56),false)
 	else:
@@ -79,7 +85,39 @@ func _draw() -> void:
 		var outline := PackedVector2Array([Vector2(16,80),Vector2(16,42),Vector2(255,42),Vector2(267,32),Vector2(496,32),Vector2(506,24),Vector2(755,24),Vector2(755,80),Vector2(16,80)])
 		canvas.draw_colored_polygon(outline,UI.DARK)
 		canvas.draw_polyline(outline,UI.EDGE,2)
-		for i in range(30):
-			canvas.draw_rect(Rect2(26 + i * 24,52,21,22),HULL_COLOR if float(i) / 30 < fraction else Color("253b32"))
+		for i in range(hull_max):
+			var cell := hull_cell_rect(i)
+			canvas.draw_rect(Rect2(cell.position.x,52,cell.size.x,22),
+				(HULL_COLOR if fraction > .33 else UI.RED) if i < hull else Color("253b32"))
 	UI.text(canvas,"HULL",Vector2(28,4),29,UI.DARK,"header")
 	UI.text(canvas,"%d / %d" % [hull,hull_max],Vector2(639,0),28,UI.INK)
+
+
+func hull_cell_rect(index: int) -> Rect2:
+	var width := FILL_RECT.size.x / maxf(hull_max, 1)
+	var gap := minf(3.0, width * 0.18)
+	return Rect2(FILL_RECT.position + Vector2(index * width, 0), Vector2(width - gap, FILL_RECT.size.y))
+
+
+static func _hull_contour() -> Texture2D:
+	if native_contour != null:
+		return native_contour
+	var mask := UI.ASSETS.texture("img/statusUI/top_hull_bar_mask.png")
+	if mask == null:
+		return null
+	var image := mask.get_image()
+	if image == null or image.is_empty():
+		return null
+	# Fill the mask's old gaps row by row, retaining its native alpha boundary.
+	# This is cached once and does not alter the shared owner-local texture.
+	for y in range(image.get_height()):
+		var left := image.get_width()
+		var right := -1
+		for x in range(image.get_width()):
+			if image.get_pixel(x, y).a > 0.5:
+				left = mini(left, x)
+				right = maxi(right, x)
+		for x in range(left, right + 1):
+			image.set_pixel(x, y, Color.WHITE)
+	native_contour = ImageTexture.create_from_image(image)
+	return native_contour

@@ -42,6 +42,8 @@ var crew_selected := false
 var weapon_selected := true
 var trigger_was_down := false
 var pause_was_down := false
+var panel_toggle_was_down := false
+var hand_screen_hidden := false
 var cancel_was_down := false
 var last_command := "Select a crew marker or target an enemy room"
 var elapsed := 0.0
@@ -254,6 +256,8 @@ func _create_hud() -> void:
 
 
 func _gameplay_hud_mode() -> bool:
+	if bool(hud_state.get("end_screen", false)):
+		return false
 	if not bool(hud_state.get("ready", demo_mode)):
 		return false
 	# In-run native windows have a separate world surface. A simultaneous
@@ -378,7 +382,7 @@ func _create_navigation() -> void:
 	legend.pixel_size = 0.001
 	legend.no_depth_test = true
 	legend.render_priority = 123
-	legend.text = "Dpad ◀ / ▶: screen   ▼: tactical   ▲: power\nView: pause   R bumper: 1–8 wheel"
+	legend.text = "Dpad ◀ / ▶: screen   ▼: tactical   ▲: power\nR Pause: pause   L View: hide screen   R bumper: 1–8 wheel"
 	nav_panel.add_child(legend)
 	legend.visible = false
 	help_label = ControllerHelp.new()
@@ -616,7 +620,7 @@ func _change_system_power(direction: int) -> void:
 
 
 func _update_power_controls(remove: bool, previous: bool, next: bool) -> void:
-	if nav_page == "power" and _game_actions_available():
+	if nav_page == "power" and _game_actions_available() and not beam_drag:
 		if previous and not power_previous_was_down:
 			panel_theme.step_selection(-1)
 		if next and not power_next_was_down:
@@ -744,10 +748,7 @@ func _process(delta: float) -> void:
 		if not trigger_down and trigger_was_down:
 			_release_pointer(ray.from, ray.direction)
 		trigger_was_down = trigger_down
-		var pause_down := left_hand.is_button_pressed("menu_button")
-		if pause_down and not pause_was_down:
-			_toggle_pause()
-		pause_was_down = pause_down
+		_update_pause_panel_buttons()
 		var cancel_down := right_hand.is_button_pressed("by_button")
 		if cancel_down and not cancel_was_down:
 			if wheel.visible:
@@ -811,17 +812,40 @@ func _process(delta: float) -> void:
 
 
 func _face_navigation_to_headset(delta: float = 1.0 / 90.0) -> void:
-	if not left_hand.get_is_active():
-		nav_panel.visible = false
+	if not left_hand.get_is_active() or hand_screen_hidden or bool(hud_state.get("end_screen", false)):
+		_set_navigation_visible(false)
 		panel_filter.reset()
 		return
-	nav_panel.visible = true
+	_set_navigation_visible(true)
 	var point := left_hand.to_global(Vector3(0, 0.08, -0.11))
 	var toward := camera.get_camera_transform().origin - point
 	if toward.length_squared() > 0.00001:
 		var up := Vector3.UP if absf(toward.normalized().dot(Vector3.UP)) < 0.98 else camera.get_camera_transform().basis.y
 		var target := Transform3D(Basis.looking_at(toward, up, true).scaled(Vector3.ONE * 0.6), point)
 		nav_panel.global_transform = panel_filter.update(target, delta)
+
+
+func _set_navigation_visible(shown: bool) -> void:
+	if nav_panel.visible == shown:
+		return
+	nav_panel.visible = shown
+	for button in nav_buttons:
+		var enabled: bool = shown and button.visible
+		button.collision_layer = 1 if enabled else 0
+		button.get_child(0).set_deferred("disabled", not enabled)
+
+
+func _update_pause_panel_buttons() -> void:
+	# Frame's right Menu is its Pause button; left View only hides the hand UI.
+	var pause_down := right_hand.is_button_pressed("menu_button")
+	if pause_down and not pause_was_down:
+		_toggle_pause()
+	pause_was_down = pause_down
+	var panel_down := left_hand.is_button_pressed("menu_button")
+	if panel_down and not panel_toggle_was_down:
+		hand_screen_hidden = not hand_screen_hidden
+		_face_navigation_to_headset()
+	panel_toggle_was_down = panel_down
 
 
 func _is_frame_hand(hand: XRController3D) -> bool:
@@ -1008,7 +1032,7 @@ func _select_from_ray(from: Vector3, direction: Vector3) -> void:
 		var room_hit := _target_room_hit(from, direction)
 		if not room_hit.is_empty():
 			beam_drag = str(_active_target().kind) == "weapon" and _selected_weapon_is_beam()
-			_command("target_room", {"room_id": int(room_hit.room_id), "ship": str(room_hit.ship), "phase": "down" if beam_drag else "click"})
+			_send_target_hit(room_hit, "down" if beam_drag else "click")
 			return
 	var query := PhysicsRayQueryParameters3D.create(from, from + direction.normalized() * 12.0)
 	query.collide_with_areas = true
@@ -1066,7 +1090,7 @@ func _command(action: String, data: Dictionary) -> void:
 
 
 func _toggle_pause() -> void:
-	if rename_keyboard.visible:
+	if rename_keyboard.visible or bool(hud_state.get("end_screen", false)):
 		return
 	if demo_mode:
 		paused = not paused
@@ -1079,7 +1103,7 @@ func _update_hud() -> void:
 	if hud_surface == null:
 		return
 	var state := hud_state.duplicate(true)
-	var player_paused := bool(hud_state.get("paused", paused if demo_mode else false))
+	var player_paused := bool(hud_state.get("paused", paused if demo_mode else false)) and not bool(hud_state.get("end_screen", false))
 	state.merge({"hull": hull_current, "hull_max": hull_max, "shield": shield_level,
 		"reactor": reactor_power, "combat": battle, "paused": player_paused}, true)
 	hud_surface.set_state(state)
@@ -1087,8 +1111,8 @@ func _update_hud() -> void:
 	# Frozen event/store simulation is distinct from the player's pause toggle.
 	pause_label.text = "PAUSED" if player_paused else ""
 	pause_label.visible = bool(state.get("ready", demo_mode)) and not rename_keyboard.visible and player_paused
-	player_ship.set_shields(shield_level, int(state.get("super_shield", 0)))
-	enemy_ship.set_shields(int(state.get("enemy_shield", 2)), int(state.get("enemy_super_shield", 0)))
+	player_ship.set_shields(shield_level, int(state.get("super_shield", 0)), bool(state.get("player", {}).get("shield_shutdown", false)))
+	enemy_ship.set_shields(int(state.get("enemy_shield", 2)), int(state.get("enemy_super_shield", 0)), bool(state.get("enemy", {}).get("shield_shutdown", false)))
 	_sync_hud_layout()
 	_position_hud(0.0)
 
@@ -1138,6 +1162,9 @@ func _poll_bridge_state() -> void:
 	if not bridge_connected:
 		return
 	hud_state = state.duplicate(true)
+	if _apply_end_screen(state):
+		return
+	combat_effects.visible = true
 	_apply_text_entry(state.get("text_entry", {}))
 	space_environment.apply_state(state)
 	var event_open := bool(state.get("event_open", false))
@@ -1229,6 +1256,30 @@ func _poll_bridge_state() -> void:
 			else:
 				_present_shot(event)
 	combat_effects.update_live_projectiles(state.get("projectiles", []))
+
+
+func _apply_end_screen(state: Dictionary) -> bool:
+	if not bool(state.get("end_screen", false)):
+		return false
+	# A finished run owns the full native canvas. Stale combat/window state can
+	# survive its first snapshot; none of those surfaces should cover this page.
+	for surface in [world_surface, event_surface, map_surface, player_ship, enemy_ship, combat_effects]:
+		surface.visible = false
+	_set_navigation_visible(false)
+	rename_keyboard.set_entry({"active": false})
+	wheel.visible = false
+	wheel_committed = true
+	beam_drag = false
+	held_surface = null
+	pending_page = ""
+	_end_crew_grab()
+	target_locks.clear()
+	enemy_hull_bar.set_state({})
+	paused = false
+	hud_surface.visible = true
+	hud_surface.canvas.frame_file = "screen_frame.png"
+	_update_hud()
+	return true
 
 
 func _apply_text_entry(entry: Dictionary) -> void:
@@ -1432,7 +1483,7 @@ func _navigation_entries() -> Array:
 func _refresh_navigation() -> void:
 	if map_surface == null:
 		return
-	map_surface.visible = xr_active and nav_page != "help" and (hud_state.get("map_open", false) or hud_state.get("tactical", false))
+	map_surface.visible = xr_active and not bool(hud_state.get("end_screen", false)) and nav_page != "help" and (hud_state.get("map_open", false) or hud_state.get("tactical", false))
 	if hud_state.get("map_open", false):
 		if map_surface.get_parent() != self:
 			map_surface.reparent(self, false)
@@ -1457,8 +1508,9 @@ func _refresh_navigation() -> void:
 	for i in range(nav_buttons.size()):
 		var button := nav_buttons[i]
 		button.visible = i < entries.size()
-		button.collision_layer = 1 if button.visible else 0
-		button.get_child(0).set_deferred("disabled", not button.visible)
+		var enabled: bool = button.visible and nav_panel.is_visible_in_tree()
+		button.collision_layer = 1 if enabled else 0
+		button.get_child(0).set_deferred("disabled", not enabled)
 		if button.visible:
 			button.set_meta("action", entries[i][1])
 			button.get_child(1).text = entries[i][0]
@@ -1483,6 +1535,11 @@ func _hover_ui(from: Vector3, direction: Vector3) -> void:
 	if now - last_hover_time < 0.1:
 		return
 	last_hover_time = now
+	if beam_drag:
+		var beam_hit := _beam_deck_hit(from, direction, "enemy")
+		if not beam_hit.is_empty() and _surface_hit(from, direction).is_empty() and _hand_panel_hit(from, direction).is_empty():
+			_send_target_hit(beam_hit, "move")
+		return
 	var hit := _surface_hit(from, direction)
 	if not hit.is_empty():
 		var pixel: Vector2i = hit["pixel"]
@@ -1509,9 +1566,9 @@ func _release_pointer(from: Vector3, direction: Vector3) -> void:
 		_command("ui_mouse", {"x": held_pixel.x, "y": held_pixel.y, "phase": "up"})
 		held_surface = null
 	if beam_drag:
-		var hit := _room_hit(from, direction, "enemy", 0.012)
+		var hit := _beam_deck_hit(from, direction, "enemy")
 		if not hit.is_empty() and _surface_hit(from, direction).is_empty() and _hand_panel_hit(from, direction).is_empty() and rename_keyboard.ray_hit(from, direction).is_empty():
-			_command("target_room", {"room_id": int(hit.room_id), "ship": "enemy", "phase": "up"})
+			_send_target_hit(hit, "up")
 		else:
 			_command("cancel", {})
 		beam_drag = false
@@ -1549,11 +1606,56 @@ func _active_target() -> Dictionary:
 
 func _target_room_hit(from: Vector3, direction: Vector3) -> Dictionary:
 	var closest := {}
+	var free_beam := str(_active_target().get("kind", "")) == "weapon" and _selected_weapon_is_beam()
 	for side in _active_target().get("ships", ["enemy"]):
-		var hit := _room_hit(from, direction, str(side), 0.012)
+		var hit := _beam_deck_hit(from, direction, str(side)) if free_beam else _room_hit(from, direction, str(side), 0.012)
 		if not hit.is_empty() and (closest.is_empty() or hit.distance < closest.distance):
 			closest = hit
 	return closest
+
+
+func _send_target_hit(hit: Dictionary, phase: String) -> void:
+	var data := {"room_id": int(hit.get("room_id", -1)), "ship": str(hit.ship), "phase": phase}
+	if beam_drag and hit.has("pixel"):
+		data.point = hit.pixel.duplicate()
+	_command("target_room", data)
+
+
+func _beam_deck_hit(from: Vector3, direction: Vector3, side: String) -> Dictionary:
+	var ship: Node3D = player_ship if side == "player" else enemy_ship
+	if not ship.is_visible_in_tree() or direction.length_squared() < 0.000001:
+		return {}
+	var local_from: Vector3 = ship.to_local(from)
+	var local_direction: Vector3 = ship.global_basis.inverse() * direction.normalized()
+	if absf(local_direction.y) < 0.000001:
+		return {}
+	var distance := (0.0775 - local_from.y) / local_direction.y
+	if distance < 0.0 or distance > 20.0:
+		return {}
+	var point := local_from + local_direction * distance
+	var deck_point := Vector2(point.x, point.z)
+	var bounds := Rect2()
+	var has_bounds := false
+	for rect: Rect2 in ship.room_bounds.values():
+		bounds = bounds.merge(rect) if has_bounds else rect
+		has_bounds = true
+	var image: Dictionary = ship.layout_data.get("image_rect", {})
+	if not image.is_empty():
+		var first: Vector2 = (Vector2(float(image.get("x", 0)), float(image.get("y", 0))) / 35.0 - ship.layout_center) * ShipModel.TILE
+		var size := Vector2(float(image.get("w", 0)), float(image.get("h", 0))) / 35.0 * ShipModel.TILE
+		var rect := Rect2(first, size)
+		bounds = bounds.merge(rect) if has_bounds else rect
+		has_bounds = true
+	if not has_bounds or not bounds.has_point(deck_point):
+		return {}
+	var room_id := -1
+	for id in ship.room_bounds:
+		if ship.room_bounds[id].has_point(deck_point):
+			room_id = int(id)
+			break
+	var native: Vector2 = deck_point / ShipModel.TILE + ship.layout_center + Vector2(float(ship.layout_data.get("x_offset", 0)), float(ship.layout_data.get("y_offset", 0)))
+	return {"position": ship.to_global(point), "room_position": ship.to_global(point), "distance": distance,
+		"room_id": room_id, "ship": side, "pixel": {"x": native.x * 35.0, "y": native.y * 35.0}}
 
 
 func _begin_crew_grab(crew: Node3D, from: Vector3) -> void:

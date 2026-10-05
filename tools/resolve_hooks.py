@@ -80,7 +80,8 @@ def resolve(executable: Path, signatures: Path) -> dict:
     for class_name,method_names in {'CommandGui':('RenderStatic','RenderPause'),
                                    'TabbedWindow':('OnRender',),'ChoiceBox':('OnRender',),
                                    'MouseControl':('OnRender',),'StarMap':('OnRender',),
-                                   'MenuScreen':('OnRender',),'OptionsScreen':('OnRender',)}.items():
+                                   'MenuScreen':('OnRender',),'OptionsScreen':('OnRender',),
+                                   'CombatControl':('RenderTarget',)}.items():
         source=(signatures.parent/(class_name+'.zhl')).read_text()
         for signature,name in re.findall(r'"([.0-9a-fA-F?]+)":[^\n]*\n[^\n]*'+class_name+r'::(\w+)\(',source):
             if name not in method_names: continue
@@ -113,6 +114,18 @@ def resolve(executable: Path, signatures: Path) -> dict:
             match=re.fullmatch(r'ecx, \[ebx \+ (0x[0-9a-f]+)\]',previous.op_str)
             if previous.mnemonic=='lea' and match: system_offsets.append(int(match.group(1),16))
     if system_offsets!=[0x320]: raise ValueError('CommandGui SystemControl offset changed')
+    game_over_loop=method_address('GameOver','OnLoop')
+    game_over_offsets=[]
+    for index,instruction in enumerate(instructions):
+        if instruction.mnemonic=='call' and instruction.op_str==hex(game_over_loop):
+            previous=instructions[index-1]
+            match=re.fullmatch(r'ecx, \[ebx \+ (0x[0-9a-f]+)\]',previous.op_str)
+            if previous.mnemonic=='lea' and match: game_over_offsets.append(int(match.group(1),16))
+    if game_over_offsets!=[0x1e88]: raise ValueError('CommandGui GameOver offset changed')
+    close=method_address('FocusWindow','Close')
+    first=next(decoder.disasm(code[close-rva:close-rva+8],close))
+    if first.mnemonic!='mov' or first.op_str!='byte ptr [ecx + 4], 0':
+        raise ValueError('Native FocusWindow open flag offset changed')
     app_loop=list(decoder.disasm(code[hooks['OnLoop']-rva:hooks['OnLoop']-rva+4096],hooks['OnLoop']))
     app_offsets=[]
     for index,instruction in enumerate(app_loop):
@@ -130,7 +143,8 @@ def resolve(executable: Path, signatures: Path) -> dict:
         raise ValueError('SystemBox system pointer offset changed')
     # Position and vector offsets follow the documented win32 SystemControl
     # and SystemBox structures; the surrounding method accesses are verified.
-    offsets={'app_gui':8,'gui_system_control':system_offsets[0],'system_control_position':0x28,
+    offsets={'app_gui':8,'gui_game_over':game_over_offsets[0],'focus_window_open':4,
+             'gui_system_control':system_offsets[0],'system_control_position':0x28,
              'system_control_boxes':8,'system_box_position':4,'system_box_system':0x4c,'system_id':0x40}
     # Both key handlers set/clear the same force_autofire flag. Validate the
     # instructions before exposing its read-only diagnostic address.

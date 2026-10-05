@@ -17,6 +17,11 @@ var unit_beam_mesh: CylinderMesh
 
 
 func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
+	var projectile_id := str(event.get("projectile_id", ""))
+	for shot in shots:
+		if not projectile_id.is_empty() and shot["projectile_id"] == projectile_id:
+			# Repeated fire delivery cannot restart an already visible native flight.
+			return
 	var kind := str(event.get("kind", "laser"))
 	var origin_ship := sender
 	if event.has("origin_space") and int(event["origin_space"]) == int(receiver.get("enemy")):
@@ -24,6 +29,8 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 	if event.has("target_space") and int(event["target_space"]) == int(sender.get("enemy")):
 		receiver = sender
 	var start: Vector3 = sender.weapon_origin(int(event.get("weapon_slot", 0)))
+	if event.has("artillery_slot"):
+		start = sender.artillery_origin(int(event["artillery_slot"]))
 	var drone_id := str(event.get("drone_id", ""))
 	var drone: Node3D = _drone(origin_ship, drone_id)
 	if drone != null:
@@ -61,15 +68,17 @@ func spawn_shot(event: Dictionary, sender: Node3D, receiver: Node3D) -> void:
 		node.visible = false
 		# Bombs appear at their destination rather than crossing space.
 	shots.append({"node": node, "start": start, "end": end, "beam_end": beam_end,
-		"projectile_id": str(event.get("projectile_id", "")), "sender": sender,
+		"projectile_id": projectile_id, "sender": sender,
 		"created_ms": Time.get_ticks_msec(), "native_present": false,
 		"visual_scale": maxf(0.1, (origin_ship if not drone_id.is_empty() else sender).global_basis.get_scale().abs().x),
 		"live_progress": 0.0, "wanted_progress": 0.0, "missed": false, "miss_feedback": false,
+		"target_end": end, "miss_origin_progress": 0.0, "miss_interval": 1.0,
 		"end_point": event.get("end_point", {}),
 		"origin_point": event.get("origin_point", {}), "origin_ship": origin_ship,
 		"drone_id": drone_id, "launch_point": origin_ship.to_local(start),
 		"target_point": event.get("target", {}), "beam_point": {},
-		"slot": int(event.get("weapon_slot", 0)), "room": int(event.get("target_room", 0)),
+		"slot": int(event.get("weapon_slot", 0)), "artillery_slot": int(event.get("artillery_slot", -1)),
+		"room": int(event.get("target_room", 0)),
 		"time": 0.0, "duration": duration, "kind": kind, "outcome": outcome, "receiver": receiver})
 
 
@@ -116,13 +125,14 @@ func _process(delta: float) -> void:
 			var drone: Node3D = _drone(shot["origin_ship"], shot["drone_id"])
 			shot["start"] = drone.muzzle_position(shot["projectile_id"]) if shot["kind"] == "beam" and drone != null else shot["origin_ship"].to_global(shot["launch_point"])
 		else:
-			shot["start"] = shot["sender"].weapon_origin(shot["slot"])
+			shot["start"] = shot["sender"].artillery_origin(shot["artillery_slot"]) if shot["artillery_slot"] >= 0 else shot["sender"].weapon_origin(shot["slot"])
 		if shot["drone_id"].is_empty() and not shot["origin_point"].is_empty():
 			shot["start"] = shot["origin_ship"].to_global(shot["origin_ship"].pixel_point(shot["origin_point"]))
 		if shot["outcome"] == "pending":
 			shot["end"] = shot["receiver"].room_target(shot["room"])
 			if not shot["target_point"].is_empty():
 				shot["end"] = shot["receiver"].to_global(shot["receiver"].pixel_point(shot["target_point"]))
+			shot["target_end"] = shot["end"]
 			if shot["missed"]:
 				shot["end"] = _miss_endpoint(shot["start"], shot["end"], shot["receiver"])
 			if not shot["end_point"].is_empty():
@@ -130,7 +140,8 @@ func _process(delta: float) -> void:
 		var progress := clampf(float(shot["time"]) / float(shot["duration"]), 0.0, 1.0)
 		if shot["outcome"] == "pending":
 			if not simulation_paused:
-				shot["live_progress"] = lerpf(shot["live_progress"], shot["wanted_progress"], minf(1.0, delta * 20.0))
+				var next_progress := lerpf(shot["live_progress"], shot["wanted_progress"], minf(1.0, delta * 20.0))
+				shot["live_progress"] = next_progress if shot["kind"] == "beam" else maxf(shot["live_progress"], next_progress)
 			progress = shot["live_progress"]
 		var node: MeshInstance3D = shot["node"]
 		if shot["kind"] == "beam":
@@ -149,8 +160,10 @@ func _process(delta: float) -> void:
 			_segment(node.get_node("BeamCore"), shot["start"], beam_target, (0.007 if not shot["drone_id"].is_empty() else 0.012) * shot["visual_scale"])
 			_segment(node.get_node("BeamGlow"), shot["start"], beam_target, (0.018 if not shot["drone_id"].is_empty() else 0.032) * shot["visual_scale"])
 		elif shot["kind"] != "bomb":
-			node.global_position = Vector3(shot["start"]).lerp(shot["end"], progress)
+			node.global_position = _flight_position(shot, progress)
 			var direction: Vector3 = Vector3(shot["end"]) - Vector3(shot["start"])
+			if shot["outcome"] == "pending" and shot["missed"]:
+				direction = Vector3(shot["end"]) - Vector3(shot["start"]).lerp(shot["target_end"], shot["miss_origin_progress"])
 			if direction.length_squared() > 0.000001:
 				var up := Vector3.RIGHT if absf(direction.normalized().dot(Vector3.UP)) > 0.98 else Vector3.UP
 				node.global_basis = Basis.looking_at(direction.normalized(), up).scaled(Vector3.ONE * shot["visual_scale"])
@@ -178,7 +191,7 @@ func resolve_live(event: Dictionary, receiver: Node3D) -> void:
 			if event.get("outcome", "") == "miss":
 				# Evasion is reported at the native collision decision. The shot
 				# may still be flying; native snapshots decide when it disappears.
-				shots[i]["missed"] = true
+				_mark_missed(shots[i])
 				_show_shot_miss(shots[i])
 				return
 			kind = str(shots[i]["kind"])
@@ -208,8 +221,15 @@ func update_live_projectiles(projectiles: Array) -> void:
 		if present.has(shot["projectile_id"]):
 			var projectile: Dictionary = present[shot["projectile_id"]]
 			shot["native_present"] = true
-			shot["wanted_progress"] = float(projectile.get("progress", 0))
-			shot["missed"] = shot["missed"] or bool(projectile.get("missed", false))
+			if bool(projectile.get("missed", false)):
+				_mark_missed(shot)
+			var native_progress := maxf(0.0, float(projectile.get("progress", 0)))
+			if shot["kind"] == "beam" or not shot["missed"]:
+				native_progress = minf(1.0, native_progress)
+			# Older bridges measured remaining radial distance to the target; that
+			# value decreases again after a miss flies past it. Out-of-order native
+			# snapshots must likewise never pull a projectile back toward its sender.
+			shot["wanted_progress"] = native_progress if shot["kind"] == "beam" else maxf(shot["wanted_progress"], native_progress)
 			if shot["missed"]:
 				_show_shot_miss(shot)
 			shot["beam_point"] = projectile.get("beam_point", {})
@@ -220,6 +240,27 @@ func update_live_projectiles(projectiles: Array) -> void:
 			# the grace clock keeps working while gameplay is paused.
 			shot["node"].queue_free()
 			shots.remove_at(i)
+
+
+func _mark_missed(shot: Dictionary) -> void:
+	if shot["missed"]:
+		return
+	shot["missed"] = true
+	shot["miss_origin_progress"] = float(shot["live_progress"])
+	shot["miss_interval"] = maxf(0.25, 1.0 - float(shot["miss_origin_progress"]))
+
+
+func _flight_position(shot: Dictionary, progress: float) -> Vector3:
+	if shot["outcome"] != "pending" or not shot["missed"]:
+		return Vector3(shot["start"]).lerp(shot["end"], progress)
+	# Begin the passing path at the exact already-presented point. Switching to
+	# a native miss cannot jump the bullet to a different segment or reset it.
+	# New native progress may exceed one after passing the target; extrapolate
+	# forward until native absence, which ends the visual without an impact.
+	var origin_progress := float(shot["miss_origin_progress"])
+	var origin: Vector3 = Vector3(shot["start"]).lerp(shot["target_end"], origin_progress)
+	var passing_progress := maxf(0.0, progress - origin_progress) / float(shot["miss_interval"])
+	return origin.lerp(shot["end"], passing_progress)
 
 
 func _impact(point: Vector3, kind: String = "laser", shield: bool = false) -> void:

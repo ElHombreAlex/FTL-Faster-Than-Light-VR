@@ -1,5 +1,20 @@
 # Changelog
 
+## Combat, results and controller corrections — source update, 2026-10-05
+
+- Make every enemy hull pip represent one native hit point, including enemies whose maximum hull differs from the player's 30-point scale.
+- Render artillery from a separate native factory list, including the Flagship's individual artillery mounts and shot origins.
+- Propagate native shield shutdown state and include it in the cached shield state; drive cloaking from the actual native ship flag. Native shield ellipse geometry is unchanged and checked against the game.
+- Keep missed projectiles moving forward through their native pass-by path without a reversal or invented impact.
+- Place both beam endpoints freely on the enemy deck plane, including gaps between rooms; preserve native aim, length and damage rules.
+- Restore the complete native 2D screen for defeat/victory results and clear tabletop ships, combat effects, target marks and controller panels during results.
+- Reduce the HUD's collision clearance from 8 cm to 5 cm. Map Steam Frame's physical right Pause/Menu button to pause/resume and left View to controller-panel hide/show.
+- Isolate native targeting graphics from the supplemental HUD pass and detect the native GameOver window through bounded read-only state. Existing installations must rerun [hook resolution](docs/INSTALLATION.md#4-resolve-the-local-executable-hooks) with the matching `CombatControl.zhl`, `GameOver.zhl` and `FocusWindow.zhl` files.
+
+Verification: 46 Python tests and twelve Godot suites pass, including four graphical Vulkan suites. Copied-profile native checks verify 4/3/2 Flagship artillery factories, first-phase cloaking, unchanged shield ellipse geometry and exact off-center/gap beam placement into native queued-shot state. Native Victory/credits and defeat retain the full opaque screen with inspected Vulkan tabletop cleanup; defeat returns cleanly to the actual main menu. Recorded geometry and rendered fixtures verify shield containment, one-HP hull pips and forward missed-shot cleanup without invented impacts. Live native beam/miss outcomes remain unverified because the tested factories queued shots without emitting live projectiles.
+
+Local delivery passes: restored production state, development and both standalone setup/readiness and desktop Vulkan launch/exit, clean logs, preserved campaign/executable hashes and regenerated hooks. The 127-file source-only package passes publication checks with zero failures/warnings. Local source folders are updated; the verified source snapshot is recorded in Git history. No physical Steam Frame or stereo-performance result is recorded for October 5.
+
 ## Targeting, jump and drone refinements — source update, 2026-10-03
 
 - Display the player's native placed weapon targets as persistent numbered room locks, red for a single volley and yellow for autofire. Preserve real beam endpoints/direction and native flak radius; keep marks attached during pause and encounter transforms, and clear them when native targets or the encounter end.

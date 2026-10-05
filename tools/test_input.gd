@@ -108,6 +108,46 @@ func run() -> void:
 	check(scene.map_surface.ray_pixel(scene.map_surface.to_global(Vector3(0,0,1)), -scene.map_surface.global_basis.z) != null,"World jump map must stay usable when hand tracking is hidden")
 	var map: OpenXRActionMap = load("res://openxr_action_map.tres")
 	check(map.find_interaction_profile("/interaction_profiles/valve/frame_controller_valve") != null,"Explicit Frame profile must ship with the client")
+	var frame_bindings := map.find_interaction_profile("/interaction_profiles/valve/frame_controller_valve").get_bindings()
+	var menu_paths := []
+	for binding in frame_bindings:
+		if binding.action.resource_name == "menu_button": menu_paths.append(binding.binding_path)
+	check("/user/hand/right/input/menu/click" in menu_paths and "/user/hand/left/input/view/click" in menu_paths,"Frame Pause and View must use the vendor-declared right Menu and left View paths")
+	var left_tracker := XRControllerTracker.new()
+	left_tracker.type = XRServer.TRACKER_CONTROLLER
+	left_tracker.name = "left_hand"
+	left_tracker.set_pose("aim",Transform3D(Basis.IDENTITY,Vector3(-0.3,1.2,0.5)),Vector3.ZERO,Vector3.ZERO,XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	XRServer.add_tracker(left_tracker)
+	scene._resolve_controller_pose(scene.left_hand)
+	scene.hud_state = {"ready":true,"ui_mode":"game"}
+	scene.nav_page = "navigation"
+	scene._refresh_navigation()
+	scene._face_navigation_to_headset()
+	var before_view_count: int = scene.commands.size()
+	left_tracker.set_input("menu_button",true)
+	scene._update_pause_panel_buttons()
+	check(scene.hand_screen_hidden and not scene.nav_panel.visible and scene.commands.size() == before_view_count,"Left View must hide the hand screen without issuing a native pause/menu action")
+	for button in scene.nav_buttons:
+		check(button.collision_layer == 0,"A hidden hand screen must not leave invisible navigation colliders")
+	scene._face_navigation_to_headset()
+	scene._refresh_navigation()
+	scene._update_pause_panel_buttons()
+	check(scene.hand_screen_hidden and not scene.nav_panel.visible,"Held View and subsequent state/pose refresh must not show the hand screen again")
+	left_tracker.set_input("menu_button",false)
+	scene._update_pause_panel_buttons()
+	left_tracker.set_input("menu_button",true)
+	scene._update_pause_panel_buttons()
+	check(not scene.hand_screen_hidden and scene.nav_panel.visible,"Pressing left View again must restore the same hand screen")
+	left_tracker.set_input("menu_button",false)
+	scene._update_pause_panel_buttons()
+	tracker.set_input("menu_button",true)
+	scene._update_pause_panel_buttons()
+	check(scene.commands.size() == before_view_count+1 and scene.commands.back().action == "key" and scene.commands.back().data.key == 32 and scene.nav_panel.visible,"Right Pause must send native Space without hiding the hand screen")
+	scene._update_pause_panel_buttons()
+	check(scene.commands.size() == before_view_count+1,"Holding right Pause must toggle the native pause once")
+	tracker.set_input("menu_button",false)
+	scene._update_pause_panel_buttons()
+	scene.nav_panel.visible = false
 	scene.hud_state = {"ready":true,"ui_mode":"game"}
 	scene._sync_hud_layout()
 	scene._position_hud(0.0, true)
@@ -306,6 +346,34 @@ func run() -> void:
 	scene.beam_drag = true
 	scene._release_pointer(enemy_point+Vector3(0,1,0),Vector3.DOWN)
 	check(scene.commands.back().action == "target_room" and scene.commands.back().data.phase == "up","Beam release must use the same room-floor picking")
+	scene.hud_state = {"ready":true,"ui_mode":"game","weapon_selected":0,"player":{"weapons":[{"kind":"beam"}]},"targeting":{"active":true,"kind":"weapon","ships":["enemy"]}}
+	var saved_bounds: Dictionary = scene.enemy_ship.room_bounds
+	var saved_image: Dictionary = scene.enemy_ship.layout_data.get("image_rect", {})
+	var saved_table: Transform3D = scene.tabletop_root.transform
+	scene.enemy_ship.room_bounds = {enemy_room:Rect2(-0.5,-0.2,0.4,0.4),999:Rect2(0.1,-0.2,0.4,0.4)}
+	scene.enemy_ship.layout_data.image_rect = {}
+	scene.tabletop_root.rotation.y += 0.47
+	scene.tabletop_root.scale *= 1.6
+	var first_local := Vector3(-0.499,0.0775,-0.199)
+	var first_world: Vector3 = scene.enemy_ship.to_global(first_local)
+	scene._select_from_ray(first_world+Vector3.UP,Vector3.DOWN)
+	var first_command: Dictionary = scene.commands.back()
+	var expected_native: Vector2 = Vector2(first_local.x,first_local.z) / scene.ShipModel.TILE + scene.enemy_ship.layout_center + Vector2(float(scene.enemy_ship.layout_data.get("x_offset",0)),float(scene.enemy_ship.layout_data.get("y_offset",0)))
+	check(scene.beam_drag and first_command.data.phase == "down" and first_command.data.has("point"),"Beam press must supply the actual freely chosen native deck point")
+	check(absf(float(first_command.data.point.x)-expected_native.x*35.0)<0.001 and absf(float(first_command.data.point.y)-expected_native.y*35.0)<0.001,"Beam endpoints must retain subpixel room-edge position under scaled/rotated table transforms")
+	var gap_world: Vector3 = scene.enemy_ship.to_global(Vector3(0,0.0775,0.03))
+	var gap_hit: Dictionary = scene._beam_deck_hit(gap_world+Vector3.UP,Vector3.DOWN,"enemy")
+	check(not gap_hit.is_empty() and gap_hit.room_id == -1,"Free beam placement must allow the deck between rooms rather than snapping to a nearest room")
+	scene.last_hover_time = -1.0
+	scene._hover_ui(gap_world+Vector3.UP,Vector3.DOWN)
+	check(scene.commands.back().data.phase == "move" and scene.commands.back().data.point == gap_hit.pixel,"Held beam aiming must forward native endpoint movement before release")
+	scene._release_pointer(gap_world+Vector3.UP,Vector3.DOWN)
+	check(not scene.beam_drag and scene.commands.back().data.phase == "up" and scene.commands.back().data.room_id == -1 and scene.commands.back().data.point == gap_hit.pixel,"Beam release must preserve an inter-room endpoint exactly")
+	check(scene._beam_deck_hit(scene.enemy_ship.to_global(Vector3(9,0.0775,9))+Vector3.UP,Vector3.DOWN,"enemy").is_empty(),"Free beam projection must reject points outside the current ship's deck envelope")
+	scene.enemy_ship.room_bounds = saved_bounds
+	scene.enemy_ship.layout_data.image_rect = saved_image
+	scene.tabletop_root.transform = saved_table
+	scene.hud_state = {"ready":true,"ui_mode":"screen","tactical":true}
 	for kind in ["mind", "hacking", "teleporter"]:
 		scene.hud_state.targeting = {"active":true,"kind":kind,"ships":["enemy"]}
 		scene._select_from_ray(enemy_point+Vector3(0,1,0),Vector3.DOWN)
@@ -441,6 +509,26 @@ func run() -> void:
 	scene._recenter()
 	check(scene.player_ship.global_position.y < scene.camera.get_camera_transform().origin.y - 0.3,"Head-relative XR spaces with zero head height must still place the ship below the headset")
 	XRServer.remove_tracker(head_tracker)
+	# A native end page may still report the previous ship and world-window flags.
+	scene.hud_state = {"ready":true,"ui_mode":"game","end_screen":true,"panel_open":true,"map_open":true,"tactical":true,"paused":true}
+	scene.world_surface.visible = true
+	scene.event_surface.visible = true
+	scene.wheel.visible = true
+	scene.beam_drag = true
+	scene.pending_page = "power"
+	check(scene._apply_end_screen(scene.hud_state),"Native victory/death state must enter the full-screen presentation path")
+	check(not scene.gameplay_hud and scene.hud_surface.source_rect == Rect2(0,0,1280,720) and scene.hud_surface.canvas.frame_file == "screen_frame.png","Final pages must use all native screen pixels regardless of stale in-run panel flags")
+	check(not scene.world_surface.visible and not scene.event_surface.visible and not scene.map_surface.visible and not scene.nav_panel.visible and not scene.player_ship.visible and not scene.enemy_ship.visible and not scene.combat_effects.visible,"Final native pages must not be obscured by old combat or world UI")
+	check(not scene.beam_drag and not scene.wheel.visible and scene.pending_page == "" and not scene.pause_label.visible,"Finished runs must cancel transient aiming and pause cues")
+	var end_commands: int = scene.commands.size()
+	scene._toggle_pause()
+	check(scene.commands.size() == end_commands,"The Pause button must not send a gameplay key into a native final screen")
+	scene.hud_state = {"ready":true,"ui_mode":"game"}
+	check(not scene._apply_end_screen(scene.hud_state),"A new active run must leave the final-screen path")
+	scene._sync_hud_layout()
+	scene._face_navigation_to_headset()
+	check(scene.gameplay_hud and scene.nav_panel.visible,"A new run must regain the compact HUD and visible tracked hand screen")
+	XRServer.remove_tracker(left_tracker)
 	XRServer.remove_tracker(tracker)
 	scene.queue_free()
 	await process_frame

@@ -46,6 +46,15 @@ methods.OnMouseMove = new NativeFunction(base.add(config.rvas.OnMouseMove), 'voi
 let lastMouse = [0, 0];
 let leftHeld = false, rightHeld = false;
 let app = null;
+let lastEndScreenReport=0;
+function reportEndScreen() {
+    if (app===null || Date.now()-lastEndScreenReport<100) return;
+    lastEndScreenReport=Date.now();
+    const commandGui=app.add(config.offsets.app_gui).readPointer();
+    const open=!commandGui.isNull() && commandGui.add(config.offsets.gui_game_over)
+        .add(config.offsets.focus_window_open).readU8()===1;
+    send({type:'end_screen',value:{open}});
+}
 const capturePerformance={started_ms:Date.now(),native_loops:0,native_swaps:0,frames:0,hud_frames:0,
     capture_ms:0,hud_ms:0,read_ms:0,loop_ms:0,bytes_sent:0};
 let activeText = null, textGeneration = 0, lastTextReport = 0, textWasActive = false;
@@ -147,6 +156,7 @@ function attachInput() {
         this.perfStart=Date.now();capturePerformance.native_loops++;
         app = this.context.ecx;
         reportText();
+        reportEndScreen();
         // Execute FTL input handlers on its main thread without taking over desktop input.
         const pending = queue.length && queue[0].ready_at <= Date.now() ? queue.splice(0, 1) : [];
         if (pending.length) focus(app);
@@ -343,7 +353,7 @@ function attachHudPass() {
     let code='extern unsigned int hud_pass;\n';
     // Esc and Options are separate render methods from the ship/store tabs.
     // They belong only to the normal screen capture used by the world panel.
-    const names=['TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','CommandGuiRenderPause','StarMapOnRender','MenuScreenOnRender','OptionsScreenOnRender'];
+    const names=['TabbedWindowOnRender','ChoiceBoxOnRender','MouseControlOnRender','CommandGuiRenderPause','StarMapOnRender','MenuScreenOnRender','OptionsScreenOnRender','CombatControlRenderTarget'];
     for (let i=0;i<names.length;i++) {
         if (!config.rvas[names[i]]) throw new Error('Missing native HUD method '+names[i]);
         symbols['original_'+i]=Memory.alloc(Process.pointerSize);

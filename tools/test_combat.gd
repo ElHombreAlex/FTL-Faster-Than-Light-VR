@@ -134,6 +134,42 @@ func _run() -> void:
 	effects.update_live_projectiles([])
 	effects.simulation_paused = false
 	effects._process(1.1)
+	# Legacy radial-distance snapshots used to fall after a miss passed its
+	# target. Both those snapshots and reordered modern ones must stay forward.
+	effects.spawn_shot({"kind": "laser", "outcome": "pending", "projectile_id": "forward-miss",
+		"target": {"x": 80, "y": 170}}, player, enemy)
+	effects.update_live_projectiles([{"id": "forward-miss", "progress": 0.76}])
+	effects._process(0.1)
+	var forward_miss: Dictionary = effects.shots.back()
+	var forward_node: MeshInstance3D = forward_miss["node"]
+	var before_miss := forward_node.global_position
+	effects.resolve_live({"projectile_id": "forward-miss", "outcome": "miss", "target": {"x": 80, "y": 170}}, enemy)
+	effects._process(0.0)
+	_check(forward_node.global_position.is_equal_approx(before_miss), "A late native miss decision must keep the projectile at its already presented point")
+	effects.update_live_projectiles([{"id": "forward-miss", "progress": 0.94, "missed": true}])
+	effects._process(0.1)
+	var passed_position := forward_node.global_position
+	var forward_direction: Vector3 = (Vector3(forward_miss["target_end"]) - Vector3(forward_miss["start"])).normalized()
+	for backwards_progress in [0.81, 0.63, 0.5]:
+		effects.update_live_projectiles([{"id": "forward-miss", "progress": backwards_progress, "missed": true}])
+		effects._process(0.1)
+		_check(forward_node.global_position.is_equal_approx(passed_position), "Legacy or reordered progress must never boomerang an already presented native miss")
+	var duplicate_count: int = effects.shots.size()
+	effects.spawn_shot({"kind": "laser", "outcome": "pending", "projectile_id": "forward-miss"}, player, enemy)
+	_check(effects.shots.size() == duplicate_count and effects.shots.back()["node"] == forward_node, "Duplicate native fire must retain one original projectile without resetting its progress")
+	effects.update_live_projectiles([{"id": "forward-miss", "progress": 1.3, "missed": true}])
+	effects._process(0.1)
+	_check((forward_node.global_position - passed_position).dot(forward_direction) > 0.2 and forward_miss["live_progress"] > 1.0, "A missed native projectile must continue forward beyond the target instead of stopping or returning")
+	var before_pause := forward_node.global_position
+	effects.simulation_paused = true
+	effects.update_live_projectiles([{"id": "forward-miss", "progress": 1.4, "missed": true}])
+	effects._process(0.5)
+	_check(forward_node.global_position.is_equal_approx(before_pause), "Paused passing misses must remain frozen")
+	var effects_before_absence: int = effects.impacts.size()
+	effects.update_live_projectiles([])
+	_check(effects.shots.is_empty() and effects.impacts.size() == effects_before_absence, "Native absence must remove a passing miss immediately without fabricated collision feedback")
+	effects.simulation_paused = false
+	effects._process(1.1)
 	scene._present_shot({"source": "player", "kind": "beam", "outcome": "pending", "projectile_id": "live-beam", "target_room": 0, "end_point": {"x": 100, "y": 180}})
 	var beam_point := {"x": 80, "y": 170}
 	effects.update_live_projectiles([{"id": "live-beam", "progress": 0.65, "beam_point": beam_point}])
@@ -254,6 +290,32 @@ func _run() -> void:
 	_check(first_bullet.mesh == second_bullet.mesh and first_bullet.get_child(0).mesh == second_bullet.get_child(0).mesh, "Repeated drone shots must reuse both core and trail geometry")
 	first_bullet.free()
 	second_bullet.free()
+	# The Flagship uses native artillery slots, not the ship's ordinary weapon
+	# list. Sparse slots after a phase change must not wrap onto a regular mount.
+	enemy._apply_artillery([{"slot": 1, "name": "ARTILLERY_LASER", "kind": "laser", "powered": true,
+		"mount": {"x": 150, "y": 110}, "charge_fraction": 0.4},
+		{"slot": 3, "name": "ARTILLERY_BEAM", "kind": "beam", "powered": true,
+		"mount": {"x": 280, "y": 130}, "charge_fraction": 0.8}])
+	_check(enemy.artillery_nodes.has(1) and enemy.artillery_nodes.has(3) and not enemy.artillery_nodes.has(0), "Sparse native artillery identities must retain their own models")
+	var artillery_origin: Vector3 = enemy.artillery_origin(3)
+	effects.spawn_shot({"kind": "beam", "outcome": "pending", "projectile_id": "flagship-beam",
+		"artillery_slot": 3, "weapon_slot": 0, "target_room": 0}, enemy, player)
+	effects.update_live_projectiles([{"id": "flagship-beam", "progress": 0.5, "beam_point": drone_target}])
+	effects._process(0.1)
+	var artillery_beam: Dictionary = effects.shots.back()
+	_check(Vector3(artillery_beam["start"]).is_equal_approx(artillery_origin) and not artillery_origin.is_equal_approx(enemy.weapon_origin(0)), "Flagship fire must originate at its exact native artillery slot instead of ordinary weapon zero")
+	var artillery_core: MeshInstance3D = artillery_beam["node"].get_node("BeamCore")
+	_check(artillery_core.global_position.is_equal_approx((artillery_origin + player.to_global(player.pixel_point(drone_target))) * 0.5), "Flagship artillery sweep must connect its actual barrel to the native live target point")
+	effects.simulation_paused = true
+	enemy.position += Vector3(0.2, 0.1, -0.15)
+	enemy.rotation.y += 0.25
+	effects._process(0.1)
+	_check(Vector3(artillery_beam["start"]).is_equal_approx(enemy.artillery_origin(3)), "Artillery emitter must follow paused encounter transforms without switching weapon slots")
+	effects.update_live_projectiles([])
+	effects.simulation_paused = false
+	enemy._apply_artillery([{"slot": 3, "name": "ARTILLERY_BEAM", "kind": "beam", "powered": true,
+		"mount": {"x": 280, "y": 130}, "charge_fraction": 0.9}])
+	_check(enemy.artillery_nodes.size() == 1 and enemy.artillery_nodes.has(3), "An absent artillery slot must be removed when the Flagship changes phase")
 	print("COMBAT_TESTS ", "PASS" if failures == 0 else "FAIL: %d" % failures)
 	scene.queue_free()
 	await process_frame
